@@ -106,7 +106,11 @@ runs:
       env:
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        JSON=$(solo account create | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        echo "Running solo account create..."
+        SOLO_OUTPUT=$(solo account create)
+        echo "Raw output from solo account create:"
+        echo "$SOLO_OUTPUT"
+        JSON=$(echo "$SOLO_OUTPUT" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
         export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n solo-test -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
