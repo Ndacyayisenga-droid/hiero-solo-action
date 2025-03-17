@@ -1,0 +1,33 @@
+name: JSON-RPC Relay Test
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-json-rpc-relay:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Hedera Solo with JSON-RPC Relay
+        uses: ./
+        with:
+          installRelay: true
+        id: solo
+
+      - name: Validate JSON-RPC Relay API
+        run: |
+          echo "Testing JSON-RPC Relay API..."
+          sleep 10  # Wait for the relay to fully start
+          RESPONSE=$(curl -s -X POST http://localhost:7546 \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
+          if [ -n "$RESPONSE" ] && echo "$RESPONSE" | grep -q "result"; then
+            echo "✅ Relay is responding correctly: $RESPONSE"
+          else
+            echo "❌ Relay did not start correctly."
+            exit 1
+          fi
