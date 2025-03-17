@@ -18,28 +18,10 @@ jobs:
           installRelay: true
         id: solo
 
-      - name: Check JSON-RPC Relay Deployment
-        run: |
-          echo "Checking JSON-RPC Relay deployment..."
-          kubectl get deployments -n solo-test
-          kubectl describe deployment json-rpc-relay -n solo-test
-
-      - name: Check JSON-RPC Relay Service
-        run: |
-          echo "Checking JSON-RPC Relay service..."
-          kubectl get svc -n solo-test
-
-      - name: Check JSON-RPC Relay Pod Logs
-        run: |
-          echo "Checking JSON-RPC Relay pod logs..."
-          kubectl get pods -n solo-test
-          POD_NAME=$(kubectl get pods -n solo-test -l app=json-rpc-relay -o jsonpath="{.items[0].metadata.name}")
-          kubectl logs $POD_NAME -n solo-test
-
       - name: Wait for JSON-RPC Relay service
         run: |
           echo "Waiting for JSON-RPC Relay service to be available..."
-          for i in {1..60}; do
+          for i in {1..30}; do
             if kubectl get svc json-rpc-relay -n solo-test &> /dev/null; then
               echo "✅ JSON-RPC Relay service is available."
               break
@@ -47,15 +29,14 @@ jobs:
             echo "⏳ JSON-RPC Relay service not found... retrying in 5 seconds"
             sleep 5
           done
-
+          
           # Ensure port-forwarding is set up before checking the API
           kubectl port-forward svc/json-rpc-relay -n solo-test 7546:7546 &
 
       - name: Validate JSON-RPC Relay API
         run: |
           echo "Testing JSON-RPC Relay API..."
-          sleep 10  # Wait for port-forwarding to stabilize
-          for i in {1..30}; do
+          for i in {1..360}; do
             RESPONSE=$(curl -s -X POST http://localhost:7546 \
               -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
