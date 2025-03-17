@@ -1,5 +1,5 @@
 name: "Hiero Solo Action"
-description: "Run a Hedera-based network using the Solo tool"
+description: "Run a Hiero-based network using the solo tool"
 inputs:
   installMirrorNode:
     description: "Defines if a mirror node should be installed"
@@ -15,12 +15,12 @@ inputs:
     required: false
     default: "8080"
   installRelay:
-    description: "Install JSON-RPC Relay"
+    description: "Install JSON-RPC-Relay"
     required: false
     default: false
     type: boolean
   relayPort:
-    description: "Port for JSON-RPC Relay"
+    description: "Port for JSON-RPC-Relay"
     required: false
     default: "7546"
 outputs:
@@ -36,11 +36,11 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Print Inputs
+    - name: Print inputs
       shell: bash
       run: |
         echo "installMirrorNode: ${{ inputs.installMirrorNode }}"
-        echo "is installMirrorNode: ${{ inputs.installMirrorNode == 'true' }}"
+        echo "is installMirrorNode: ${{ inputs.installMirrorNode }}"
 
     - name: Setup Java
       uses: actions/setup-java@v4
@@ -53,33 +53,37 @@ runs:
       with:
         node-version: 22
 
-    - name: Install Wget CLI
+    - name: Install WGet CLI
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y wget
 
     - name: Install Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.11" # Updated to a more recent, supported version
+        python-version: "3.10"
+
+    - name: Install jq and base64
+      shell: bash
+      run: sudo apt-get install -y jq coreutils
 
     - name: Setup Helm
       uses: azure/setup-helm@v4
       with:
-        version: "v3.15.4" # Updated to a newer stable version
+        version: "v3.12.3" # Helm version
 
     - name: Setup Kind
-      uses: helm/kind-action@v1.12.0
+      uses: helm/kind-action@v1
       with:
         install_only: true
-        node_image: kindest/node:v1.31.4@sha256:2cb39f7295fe7eafee0842b1052a599a4fb0f8bcf3f83d96c7f4864c357c6c30
-        version: v0.26.0
-        kubectl_version: v1.31.4
+        node_image: kindest/node:v1.27.3@sha256:3966ac761ae0136263ffdb6cfd4db23ef8a83cba8a463690e98317add2c9ba72
+        version: v0.20.0
+        kubectl_version: v1.27.3
         verbosity: 3
         wait: 120s
 
     - name: Install Solo
       shell: bash
-      run: npm install -g @hashgraph/solo@0.35.0 # Updated to a more recent version
+      run: npm install -g @hashgraph/solo@0.35.1
 
     - name: Deploy Solo Test Network
       shell: bash
@@ -88,40 +92,59 @@ runs:
         export SOLO_NAMESPACE=solo
         export SOLO_DEPLOYMENT=solo-deployment
         export SOLO_EMAIL=solo-action@hiero.org
-        kind create cluster --name "${SOLO_CLUSTER_NAME}" --image "kindest/node:v1.31.4@sha256:2cb39f7295fe7eafee0842b1052a599a4fb0f8bcf3f83d96c7f4864c357c6c30"
-        solo init --quiet
-        solo deployment create --node-aliases node1 --namespace "${SOLO_NAMESPACE}" --context "kind-${SOLO_CLUSTER_NAME}" --email "${SOLO_EMAIL}" --deployment-clusters "kind-${SOLO_CLUSTER_NAME}" --deployment "${SOLO_DEPLOYMENT}" --release-tag "${{ inputs.hederaVersion }}"
-        solo node keys --node-aliases node1 --gossip-keys --tls-keys --quiet
-        solo cluster setup --cluster-setup-namespace "${SOLO_CLUSTER_NAME}" --quiet
-        solo network deploy --node-aliases node1 --namespace "${SOLO_NAMESPACE}" --deployment "${SOLO_DEPLOYMENT}" --release-tag "${{ inputs.hederaVersion }}"
-        solo node setup --node-aliases node1 --namespace "${SOLO_NAMESPACE}" --deployment "${SOLO_DEPLOYMENT}" --release-tag "${{ inputs.hederaVersion }}"
-        solo node start --node-aliases node1 --namespace "${SOLO_NAMESPACE}" --deployment "${SOLO_DEPLOYMENT}"
 
-    - name: Install Mirror Node (Optional)
-      if: inputs.installMirrorNode == 'true'
+        kind create cluster -n "${SOLO_CLUSTER_NAME}"
+        solo init
+        solo deployment create --node-aliases node1 --namespace "${SOLO_NAMESPACE}" --context kind-${SOLO_CLUSTER_NAME} --email "${SOLO_EMAIL}" --deployment-clusters kind-${SOLO_CLUSTER_NAME} --deployment "${SOLO_DEPLOYMENT}"
+        solo node keys --node-aliases node1 --gossip-keys --tls-keys --quiet-mode
+        solo cluster setup --cluster-setup-namespace "${SOLO_CLUSTER_NAME}" --quiet-mode
+        solo network deploy --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
+        solo node setup --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
+        solo node start --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
+
+    - name: Verify Kubernetes cluster and nodes
       shell: bash
       run: |
-        solo mirror-node deploy --namespace "${SOLO_NAMESPACE}" --release-tag "${{ inputs.hederaVersion }}"
-        kubectl port-forward -n "${SOLO_NAMESPACE}" svc/hedera-explorer ${{ inputs.mirrorNodePort }}:80 &
+        kubectl get nodes
+        kubectl get pods -n solo
 
-    - name: Install JSON-RPC Relay (Optional)
-      if: inputs.installRelay == 'true'
-      shell: bash
-      run: |
-        solo relay deploy --namespace "${SOLO_NAMESPACE}" --release-tag "${{ inputs.hederaVersion }}"
-        kubectl port-forward -n "${SOLO_NAMESPACE}" svc/json-rpc-relay ${{ inputs.relayPort }}:7546 &
-
-    - name: Create Account
+    - name: Create account
       id: create-account
       shell: bash
       env:
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        JSON=$(solo account create --namespace "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
-        HEDERA_ACCOUNT_ID=$(echo "$JSON" | jq -r '.accountId')
-        HEDERA_ACCOUNT_PUBLIC_KEY=$(echo "$JSON" | jq -r '.publicKey')
-        HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret "account-key-$HEDERA_ACCOUNT_ID" -n "${SOLO_NAMESPACE}" -o jsonpath='{.data.privateKey}' | base64 -d)
-        solo account update --account-id "$HEDERA_ACCOUNT_ID" --hbar-amount 10000000 --namespace "${SOLO_NAMESPACE}"
+        # Debug: Print the output of solo account create
+        echo "Running solo account create..."
+        JSON=$(solo account create)
+        echo "Output of solo account create:"
+        echo "$JSON"
+
+        # Extract account details using the Python script
+        JSON=$(echo "$JSON" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        echo "Parsed JSON:"
+        echo "$JSON"
+
+        # Check if the JSON contains an error
+        if echo "$JSON" | jq -e '.error' > /dev/null; then
+          echo "Error: Failed to parse account details"
+          exit 1
+        fi
+
+        # Export account details
+        export HEDERA_ACCOUNT_ID=$(echo "$JSON" | jq -r '.accountId')
+        export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo "$JSON" | jq -r '.publicKey')
+        export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n solo -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
+
+        # Debug: Print account details
+        echo "Account ID: $HEDERA_ACCOUNT_ID"
+        echo "Public Key: $HEDERA_ACCOUNT_PUBLIC_KEY"
+        echo "Private Key: $HEDERA_ACCOUNT_PRIVATE_KEY"
+
+        # Update account balance
+        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000
+
+        # Set outputs
         echo "accountId=$HEDERA_ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
