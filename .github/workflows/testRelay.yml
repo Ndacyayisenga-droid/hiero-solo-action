@@ -18,16 +18,19 @@ jobs:
           installRelay: true
         id: solo
 
-      - name: Validate JSON-RPC Relay API
+      - name: Wait for JSON-RPC Relay API to be ready
         run: |
-          echo "Testing JSON-RPC Relay API..."
-          sleep 10  # Wait for the relay to fully start
-          RESPONSE=$(curl -s -X POST http://localhost:7546 \
-            -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
-          if [ -n "$RESPONSE" ] && echo "$RESPONSE" | grep -q "result"; then
-            echo "✅ Relay is responding correctly: $RESPONSE"
-          else
-            echo "❌ Relay did not start correctly."
-            exit 1
-          fi
+          echo "Waiting for JSON-RPC Relay API to be ready..."
+          for i in {1..30}; do
+            RESPONSE=$(curl -s -X POST http://localhost:7546 \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
+            if [ -n "$RESPONSE" ] && echo "$RESPONSE" | grep -q "result"; then
+              echo "✅ Relay is responding correctly: $RESPONSE"
+              exit 0
+            fi
+            echo "⏳ Relay not ready yet... retrying in 2 seconds"
+            sleep 2
+          done
+          echo "❌ Relay did not start correctly."
+          exit 1
