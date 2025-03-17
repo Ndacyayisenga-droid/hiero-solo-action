@@ -21,7 +21,7 @@ jobs:
       - name: Wait for JSON-RPC Relay service
         run: |
           echo "Waiting for JSON-RPC Relay service to be available..."
-          for i in {1..400}; do
+          for i in {1..150}; do
             if kubectl get svc json-rpc-relay -n solo-test &> /dev/null; then
               echo "✅ JSON-RPC Relay service is available."
               break
