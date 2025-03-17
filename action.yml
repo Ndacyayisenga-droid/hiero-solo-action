@@ -117,6 +117,20 @@ runs:
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
 
+    - name: Debug Solo Account Creation
+      shell: bash
+      run: |
+        echo "Running 'solo account create'..."
+        solo account create | tee solo_account_output.json
+    
+    - name: Extract Account Details
+      shell: bash
+      run: |
+        JSON=$(cat solo_account_output.json)
+        echo "Raw JSON output from 'solo account create': $JSON"
+        echo "$JSON" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py
+
+
 branding:
   icon: "share-2"
   color: "black"
