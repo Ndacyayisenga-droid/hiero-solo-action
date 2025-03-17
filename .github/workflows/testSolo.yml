@@ -33,7 +33,7 @@ jobs:
         run: |
           git clone https://github.com/hashgraph/solo.git
           cd solo
-          task default-with-relay
+          task
 
       - name: Verify Solo network is running
         run: |
