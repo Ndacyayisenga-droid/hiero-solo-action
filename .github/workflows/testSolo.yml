@@ -40,8 +40,8 @@ jobs:
           sleep 10  # Give some time for the network to start
           docker ps
 
-      - name: Stop Solo network
-        if: always()
-        run: |
-          cd solo
-          task clean
+      # - name: Stop Solo network
+      #   if: always()
+      #   run: |
+      #     cd solo
+      #     task clean
