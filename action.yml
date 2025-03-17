@@ -102,11 +102,15 @@ runs:
         solo node setup --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
         solo node start --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
 
-    - name: Verify Kubernetes cluster and nodes
+    - name: Verify Solo network status
       shell: bash
       run: |
-        kubectl get nodes
         kubectl get pods -n solo
+        kubectl logs -n solo -l app=hedera-node
+
+    - name: Wait for network to stabilize
+      shell: bash
+      run: sleep 30
 
     - name: Create account
       id: create-account
