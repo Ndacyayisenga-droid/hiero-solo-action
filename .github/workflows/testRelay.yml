@@ -18,9 +18,24 @@ jobs:
           installRelay: true
         id: solo
 
-      - name: Wait for JSON-RPC Relay API to be ready
+      - name: Wait for JSON-RPC Relay service
         run: |
-          echo "Waiting for JSON-RPC Relay API to be ready..."
+          echo "Waiting for JSON-RPC Relay service to be available..."
+          for i in {1..30}; do
+            if kubectl get svc json-rpc-relay -n solo-test &> /dev/null; then
+              echo "✅ JSON-RPC Relay service is available."
+              break
+            fi
+            echo "⏳ JSON-RPC Relay service not found... retrying in 5 seconds"
+            sleep 5
+          done
+          
+          # Ensure port-forwarding is set up before checking the API
+          kubectl port-forward svc/json-rpc-relay -n solo-test 7546:7546 &
+
+      - name: Validate JSON-RPC Relay API
+        run: |
+          echo "Testing JSON-RPC Relay API..."
           for i in {1..30}; do
             RESPONSE=$(curl -s -X POST http://localhost:7546 \
               -H "Content-Type: application/json" \
@@ -29,8 +44,8 @@ jobs:
               echo "✅ Relay is responding correctly: $RESPONSE"
               exit 0
             fi
-            echo "⏳ Relay not ready yet... retrying in 2 seconds"
-            sleep 2
+            echo "⏳ Relay not ready yet... retrying in 5 seconds"
+            sleep 5
           done
           echo "❌ Relay did not start correctly."
           exit 1
