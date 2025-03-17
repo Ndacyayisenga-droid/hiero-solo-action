@@ -33,15 +33,15 @@ jobs:
         run: |
           git clone https://github.com/hashgraph/solo.git
           cd solo
-          task default-with-relay
+          task
 
       - name: Verify Solo network is running
         run: |
           sleep 10  # Give some time for the network to start
           docker ps
 
-      # - name: Stop Solo network
-      #   if: always()
-      #   run: |
-      #     cd solo
-      #     task clean
+      - name: Stop Solo network
+         if: always()
+         run: |
+           cd solo
+           task clean
