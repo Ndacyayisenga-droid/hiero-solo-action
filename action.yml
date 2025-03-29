@@ -78,9 +78,7 @@ runs:
       shell: bash
       env:
         SOLO_CLUSTER_NAME: solo-cluster
-        SOLO_NAMESPACE: solo-e2e
         SOLO_CLUSTER_SETUP_NAMESPACE: solo-setup
-        SOLO_DEVELOPMENT: solo-deployment
       run: |
         # Initialize Solo environment
         solo init
@@ -88,54 +86,51 @@ runs:
         # Setup cluster with shared components
         solo cluster setup -s "${SOLO_CLUSTER_SETUP_NAMESPACE}"
 
-        # Create the namespace explicitly
-        kubectl create namespace "${SOLO_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
-
         # Generate keys for node0
         solo node keys --gossip-keys --tls-keys -i node0
 
-        # Deploy network with specified Hedera version
-        solo network deploy --deployment "${SOLO_DEVELOPMENT}" -i node0 -t ${{ inputs.hederaVersion }}
+        # Deploy network into solo-setup namespace
+        solo network deploy --deployment "${SOLO_CLUSTER_SETUP_NAMESPACE}" -i node0 -t ${{ inputs.hederaVersion }}
 
-        # Setup and start node
-        solo node setup -n "${SOLO_NAMESPACE}" -i node0
-        solo node start -n "${SOLO_NAMESPACE}" -i node0
+        # Setup and start node in solo-setup
+        solo node setup -n "${SOLO_CLUSTER_SETUP_NAMESPACE}" -i node0
+        solo node start -n "${SOLO_CLUSTER_SETUP_NAMESPACE}" -i node0
 
         # Background port-forward for network access
-        kubectl port-forward svc/haproxy-node0-svc -n "${SOLO_NAMESPACE}" 50211:50211 &
+        kubectl port-forward svc/haproxy-node0-svc -n "${SOLO_CLUSTER_SETUP_NAMESPACE}" 50211:50211 &
 
     - name: Deploy Mirror Node
       if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
       env:
-        SOLO_NAMESPACE: solo-e2e
+        SOLO_CLUSTER_SETUP_NAMESPACE: solo-setup
       run: |
-        solo mirror-node deploy -n "${SOLO_NAMESPACE}"
-        kubectl port-forward svc/fullstack-deployment-hedera-explorer -n "${SOLO_NAMESPACE}" ${{ inputs.mirrorNodePort }}:80 &
+        solo mirror-node deploy -n "${SOLO_CLUSTER_SETUP_NAMESPACE}"
+        kubectl port-forward svc/fullstack-deployment-hedera-explorer -n "${SOLO_CLUSTER_SETUP_NAMESPACE}" ${{ inputs.mirrorNodePort }}:80 &
 
     - name: Deploy JSON-RPC-Relay
       if: ${{ inputs.installRelay == 'true' }}
       shell: bash
       env:
-        SOLO_NAMESPACE: solo-e2e
+        SOLO_CLUSTER_SETUP_NAMESPACE: solo-setup
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy -n "${SOLO_NAMESPACE}"
+        solo relay deploy -n "${SOLO_CLUSTER_SETUP_NAMESPACE}"
         echo "JSON-RPC-Relay installed successfully"
-        kubectl port-forward svc/json-rpc-relay -n "${SOLO_NAMESPACE}" ${{ inputs.relayPort }}:7546 &
+        kubectl port-forward svc/json-rpc-relay -n "${SOLO_CLUSTER_SETUP_NAMESPACE}" ${{ inputs.relayPort }}:7546 &
 
     - name: Create Account
       id: create-account
       shell: bash
       env:
-        SOLO_NAMESPACE: solo-e2e
+        SOLO_CLUSTER_SETUP_NAMESPACE: solo-setup
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        JSON=$(solo account create -n "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        JSON=$(solo account create -n "${SOLO_CLUSTER_SETUP_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
         export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
-        export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n "${SOLO_NAMESPACE}" -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000 -n "${SOLO_NAMESPACE}"
+        export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n "${SOLO_CLUSTER_SETUP_NAMESPACE}" -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
+        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000 -n "${SOLO_CLUSTER_SETUP_NAMESPACE}"
         echo "accountId=$HEDERA_ACCOUNT_ID"
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY"
