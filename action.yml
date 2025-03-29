@@ -84,14 +84,14 @@ runs:
         # Initialize Solo environment
         solo init
 
-        # Connect KIND cluster to Solo with an explicit email
+        # Create deployment with namespace first
+        solo deployment create -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -q
+
+        # Connect KIND cluster to Solo after deployment is created
         solo cluster connect -c "${SOLO_CLUSTER_NAME}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
 
         # Setup cluster with shared components
         solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
-
-        # Create deployment with namespace
-        solo deployment create -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -q
 
         # Generate keys for node0
         solo node keys -d "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -i node0
