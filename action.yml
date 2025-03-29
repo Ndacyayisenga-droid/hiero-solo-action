@@ -15,7 +15,7 @@ inputs:
     required: false
     default: "8080"
   installRelay:
-    description: 'Install JSON-RPC-Relay'
+    description: "Install JSON-RPC-Relay"
     required: false
     default: false
     type: boolean
@@ -36,7 +36,7 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: print inputs
+    - name: Print Inputs
       shell: bash
       run: |
         echo "installMirrorNode: ${{ inputs.installMirrorNode }}"
@@ -53,7 +53,7 @@ runs:
       with:
         node-version: 20.18.0
 
-    - name: Install WGet CLI
+    - name: Install Wget CLI
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y wget
 
@@ -67,7 +67,7 @@ runs:
       with:
         version: v0.23.0
         kubectl_version: v1.27.3
-        cluster_name: solo-e2e
+        cluster_name: solo-cluster
         wait: 120s
 
     - name: Install Solo
@@ -79,49 +79,33 @@ runs:
       env:
         SOLO_CLUSTER_NAME: solo-cluster
         SOLO_NAMESPACE: solo-test
-        SOLO_CLUSTER_SETUP_NAMESPACE: solo-setup
-        SOLO_DEVELOPMENT: solo-deployment
       run: |
-        # Delete and recreate the Kind cluster
-        kind delete cluster -n "${SOLO_CLUSTER_NAME}"
-        kind create cluster -n "${SOLO_CLUSTER_NAME}"
-
         # Initialize Solo environment
         solo init
 
-        # Setup cluster reference
-        solo cluster-ref setup --cluster-setup-namespace "${SOLO_CLUSTER_SETUP_NAMESPACE}"
-
-        # Connect to the cluster
-        solo cluster-ref connect --cluster-ref kind-${SOLO_CLUSTER_NAME} --context kind-${SOLO_CLUSTER_NAME} --email "ci@example.com"
-
-        # Create deployment
-        solo deployment create --namespace "${SOLO_NAMESPACE}" --deployment "${SOLO_DEVELOPMENT}"
-
-        # Add cluster to deployment with 1 node (for simplicity)
-        solo deployment add-cluster --deployment "${SOLO_DEVELOPMENT}" --cluster-ref kind-${SOLO_CLUSTER_NAME} --num-consensus-nodes 1
+        # Setup cluster (simplified, assuming solo handles Kind context automatically)
+        solo cluster setup -n "${SOLO_NAMESPACE}"
 
         # Generate keys for node0
         solo node keys --gossip-keys --tls-keys -i node0
 
-        # Deploy network
-        solo network deploy --deployment "${SOLO_DEVELOPMENT}" -i node0 --release ${{ inputs.hederaVersion }}
+        # Deploy network with specified Hedera version
+        solo network deploy -n "${SOLO_NAMESPACE}" -i node0 --release ${{ inputs.hederaVersion }}
 
         # Setup and start node
-        solo node setup --deployment "${SOLO_DEVELOPMENT}" -i node0
-        solo node start --deployment "${SOLO_DEVELOPMENT}" -i node0
+        solo node setup -n "${SOLO_NAMESPACE}" -i node0
+        solo node start -n "${SOLO_NAMESPACE}" -i node0
 
         # Background port-forward for network access
         kubectl port-forward svc/haproxy-node0-svc -n "${SOLO_NAMESPACE}" 50211:50211 &
 
-    - name: Deploy MirrorNode
+    - name: Deploy Mirror Node
       if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
       env:
         SOLO_NAMESPACE: solo-test
-        SOLO_DEVELOPMENT: solo-deployment
       run: |
-        solo mirror-node deploy --deployment "${SOLO_DEVELOPMENT}"
+        solo mirror-node deploy -n "${SOLO_NAMESPACE}"
         kubectl port-forward svc/fullstack-deployment-hedera-explorer -n "${SOLO_NAMESPACE}" ${{ inputs.mirrorNodePort }}:80 &
 
     - name: Deploy JSON-RPC-Relay
@@ -129,14 +113,13 @@ runs:
       shell: bash
       env:
         SOLO_NAMESPACE: solo-test
-        SOLO_DEVELOPMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy --deployment "${SOLO_DEVELOPMENT}"
+        solo relay deploy -n "${SOLO_NAMESPACE}"
         echo "JSON-RPC-Relay installed successfully"
         kubectl port-forward svc/json-rpc-relay -n "${SOLO_NAMESPACE}" ${{ inputs.relayPort }}:7546 &
 
-    - name: Create account
+    - name: Create Account
       id: create-account
       shell: bash
       env:
