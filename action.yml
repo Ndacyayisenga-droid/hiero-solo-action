@@ -84,8 +84,8 @@ runs:
         # Initialize Solo environment
         solo init
 
-        # Create deployment with namespace first
-        solo deployment create -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -q
+        # Create deployment with namespace first (use --deployment instead of -d)
+        solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -q
 
         # Connect KIND cluster to Solo after deployment is created
         solo cluster connect -c "${SOLO_CLUSTER_NAME}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
@@ -93,15 +93,15 @@ runs:
         # Setup cluster with shared components
         solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
 
-        # Generate keys for node0
-        solo node keys -d "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -i node0
+        # Generate keys for node0 (use --deployment instead of -d)
+        solo node keys --deployment "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -i node0
 
-        # Deploy network
-        solo network deploy -d "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}"
+        # Deploy network (use --deployment instead of -d)
+        solo network deploy --deployment "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}"
 
-        # Setup and start node
-        solo node setup -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
-        solo node start -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
+        # Setup and start node (use --deployment instead of -d)
+        solo node setup --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
+        solo node start --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
 
         # Background port-forward for network access
         kubectl port-forward svc/haproxy-node0-svc -n "${SOLO_NAMESPACE}" 50211:50211 &
@@ -113,7 +113,7 @@ runs:
         SOLO_NAMESPACE: solo-e2e
         SOLO_DEPLOYMENT: solo-deployment
       run: |
-        solo mirror-node deploy -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}"
+        solo mirror-node deploy --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}"
         kubectl port-forward svc/fullstack-deployment-hedera-explorer -n "${SOLO_NAMESPACE}" ${{ inputs.mirrorNodePort }}:80 &
 
     - name: Deploy JSON-RPC-Relay
@@ -124,7 +124,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}"
+        solo relay deploy --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}"
         echo "JSON-RPC-Relay installed successfully"
         kubectl port-forward svc/json-rpc-relay -n "${SOLO_NAMESPACE}" ${{ inputs.relayPort }}:7546 &
 
@@ -136,11 +136,11 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        JSON=$(solo account create -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        JSON=$(solo account create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
         export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n "${SOLO_NAMESPACE}" -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update -d "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000
+        solo account update --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000
         echo "accountId=$HEDERA_ACCOUNT_ID"
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY"
