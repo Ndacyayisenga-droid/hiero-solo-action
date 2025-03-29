@@ -78,7 +78,7 @@ runs:
       shell: bash
       env:
         SOLO_CLUSTER_NAME: solo-cluster
-        SOLO_NAMESPACE: solo-test
+        SOLO_NAMESPACE: solo-e2e
       run: |
         # Initialize Solo environment
         solo init
@@ -103,7 +103,7 @@ runs:
       if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
       env:
-        SOLO_NAMESPACE: solo-test
+        SOLO_NAMESPACE: solo-e2e
       run: |
         solo mirror-node deploy -n "${SOLO_NAMESPACE}"
         kubectl port-forward svc/fullstack-deployment-hedera-explorer -n "${SOLO_NAMESPACE}" ${{ inputs.mirrorNodePort }}:80 &
@@ -112,7 +112,7 @@ runs:
       if: ${{ inputs.installRelay == 'true' }}
       shell: bash
       env:
-        SOLO_NAMESPACE: solo-test
+        SOLO_NAMESPACE: solo-e2e
       run: |
         echo "Installing JSON-RPC-Relay..."
         solo relay deploy -n "${SOLO_NAMESPACE}"
@@ -123,7 +123,7 @@ runs:
       id: create-account
       shell: bash
       env:
-        SOLO_NAMESPACE: solo-test
+        SOLO_NAMESPACE: solo-e2e
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
         JSON=$(solo account create -n "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
