@@ -88,11 +88,14 @@ runs:
         # Setup cluster with shared components
         solo cluster setup -s "${SOLO_CLUSTER_SETUP_NAMESPACE}"
 
+        # Create the namespace explicitly
+        kubectl create namespace "${SOLO_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
         # Generate keys for node0
         solo node keys --gossip-keys --tls-keys -i node0
 
-        # Deploy network with specified Hedera version, adding -n for namespace
-        solo network deploy --deployment "${SOLO_DEVELOPMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t ${{ inputs.hederaVersion }}
+        # Deploy network with specified Hedera version
+        solo network deploy --deployment "${SOLO_DEVELOPMENT}" -i node0 -t ${{ inputs.hederaVersion }}
 
         # Setup and start node
         solo node setup -n "${SOLO_NAMESPACE}" -i node0
