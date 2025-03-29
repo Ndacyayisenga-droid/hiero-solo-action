@@ -72,7 +72,7 @@ runs:
 
     - name: Install Solo
       shell: bash
-      run: npm install -g @hashgraph/solo@0.35.0
+      run: npm install -g @hashgraph/solo@0.35.1
 
     - name: Deploy Solo Test Network
       shell: bash
