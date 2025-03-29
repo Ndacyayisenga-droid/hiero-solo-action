@@ -1,5 +1,5 @@
-name: "Hiero Solo Action"
-description: "Run a Hiero based network by using the solo tool"
+name: "Hedera Solo Action"
+description: "Run a Hedera based network by using the solo tool"
 inputs:
   installMirrorNode:
     description: "Defines if a mirror node should be installed"
@@ -84,8 +84,8 @@ runs:
         # Initialize Solo environment
         solo init
 
-        # Create deployment with namespace first (use --deployment instead of -d)
-        solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -q
+        # Create deployment with namespace first, include email
+        solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --email "ci@example.com" -q
 
         # Connect KIND cluster to Solo after deployment is created
         solo cluster connect -c "${SOLO_CLUSTER_NAME}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
@@ -93,13 +93,13 @@ runs:
         # Setup cluster with shared components
         solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
 
-        # Generate keys for node0 (use --deployment instead of -d)
+        # Generate keys for node0
         solo node keys --deployment "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -i node0
 
-        # Deploy network (use --deployment instead of -d)
+        # Deploy network
         solo network deploy --deployment "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}"
 
-        # Setup and start node (use --deployment instead of -d)
+        # Setup and start node
         solo node setup --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
         solo node start --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
 
