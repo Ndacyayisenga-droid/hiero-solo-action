@@ -83,8 +83,8 @@ runs:
         # Initialize Solo environment
         solo init
 
-        # Setup cluster (simplified, assuming solo handles Kind context automatically)
-        solo cluster setup -n "${SOLO_NAMESPACE}"
+        # Setup cluster with the correct namespace flag
+        solo cluster setup -s "${SOLO_NAMESPACE}"
 
         # Generate keys for node0
         solo node keys --gossip-keys --tls-keys -i node0
