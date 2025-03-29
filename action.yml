@@ -84,8 +84,8 @@ runs:
         # Initialize Solo environment
         solo init
 
-        # Connect KIND cluster to Solo (adjusted from cluster-ref to cluster)
-        solo cluster connect -c "${SOLO_CLUSTER_NAME}" --context "kind-${SOLO_CLUSTER_NAME}" -q
+        # Connect KIND cluster to Solo with an explicit email
+        solo cluster connect -c "${SOLO_CLUSTER_NAME}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
 
         # Setup cluster with shared components
         solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
