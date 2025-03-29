@@ -87,17 +87,19 @@ runs:
         # Create deployment with namespace and explicit context
         solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
 
-        # Skip cluster connect and proceed to setup
+        # Setup cluster with shared components
         solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
 
         # Generate keys for node0
         solo node keys --deployment "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -i node0
 
-        # Deploy network
+        # Setup node0 as a consensus node
+        solo node setup --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
+
+        # Deploy network with node0
         solo network deploy --deployment "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}"
 
-        # Setup and start node
-        solo node setup --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
+        # Start node0
         solo node start --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
 
         # Background port-forward for network access
