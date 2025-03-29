@@ -65,7 +65,7 @@ runs:
     - name: Setup Kind
       uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
       with:
-        version: v0.23.0  # Updated to a more recent version
+        version: v0.23.0
         kubectl_version: v1.27.3
         cluster_name: solo-e2e
         wait: 120s
@@ -76,42 +76,78 @@ runs:
 
     - name: Deploy Solo Test Network
       shell: bash
+      env:
+        SOLO_CLUSTER_NAME: solo-cluster
+        SOLO_NAMESPACE: solo-test
+        SOLO_CLUSTER_SETUP_NAMESPACE: solo-setup
+        SOLO_DEVELOPMENT: solo-deployment
       run: |
-        solo init -i nodeণ -t ${{ inputs.hederaVersion }} -n solo-test --key-format pem --profile local
-        solo cluster setup -n solo-test
-        solo node keys --tls-keys --gossip-keys -i node0
-        solo network deploy -n solo-test -i node0
-        solo node setup -i node0
-        solo node start -i node0
-        kubectl port-forward svc/haproxy-node0-svc -n solo-test 50211:50211 &
+        # Delete and recreate the Kind cluster
+        kind delete cluster -n "${SOLO_CLUSTER_NAME}"
+        kind create cluster -n "${SOLO_CLUSTER_NAME}"
+
+        # Initialize Solo environment
+        solo init
+
+        # Setup cluster reference
+        solo cluster-ref setup --cluster-setup-namespace "${SOLO_CLUSTER_SETUP_NAMESPACE}"
+
+        # Connect to the cluster
+        solo cluster-ref connect --cluster-ref kind-${SOLO_CLUSTER_NAME} --context kind-${SOLO_CLUSTER_NAME} --email "ci@example.com"
+
+        # Create deployment
+        solo deployment create --namespace "${SOLO_NAMESPACE}" --deployment "${SOLO_DEVELOPMENT}"
+
+        # Add cluster to deployment with 1 node (for simplicity)
+        solo deployment add-cluster --deployment "${SOLO_DEVELOPMENT}" --cluster-ref kind-${SOLO_CLUSTER_NAME} --num-consensus-nodes 1
+
+        # Generate keys for node0
+        solo node keys --gossip-keys --tls-keys -i node0
+
+        # Deploy network
+        solo network deploy --deployment "${SOLO_DEVELOPMENT}" -i node0 --release ${{ inputs.hederaVersion }}
+
+        # Setup and start node
+        solo node setup --deployment "${SOLO_DEVELOPMENT}" -i node0
+        solo node start --deployment "${SOLO_DEVELOPMENT}" -i node0
+
+        # Background port-forward for network access
+        kubectl port-forward svc/haproxy-node0-svc -n "${SOLO_NAMESPACE}" 50211:50211 &
 
     - name: Deploy MirrorNode
       if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
+      env:
+        SOLO_NAMESPACE: solo-test
+        SOLO_DEVELOPMENT: solo-deployment
       run: |
-        solo mirror-node deploy -n solo-test
-        kubectl port-forward svc/fullstack-deployment-hedera-explorer -n solo-test ${{ inputs.mirrorNodePort }}:80 &
+        solo mirror-node deploy --deployment "${SOLO_DEVELOPMENT}"
+        kubectl port-forward svc/fullstack-deployment-hedera-explorer -n "${SOLO_NAMESPACE}" ${{ inputs.mirrorNodePort }}:80 &
 
     - name: Deploy JSON-RPC-Relay
       if: ${{ inputs.installRelay == 'true' }}
       shell: bash
+      env:
+        SOLO_NAMESPACE: solo-test
+        SOLO_DEVELOPMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy -n solo-test
+        solo relay deploy --deployment "${SOLO_DEVELOPMENT}"
         echo "JSON-RPC-Relay installed successfully"
-        kubectl port-forward svc/json-rpc-relay -n solo-test ${{ inputs.relayPort }}:7546 &
+        kubectl port-forward svc/json-rpc-relay -n "${SOLO_NAMESPACE}" ${{ inputs.relayPort }}:7546 &
 
     - name: Create account
       id: create-account
       shell: bash
       env:
+        SOLO_NAMESPACE: solo-test
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        JSON=$(solo account create -n solo-test | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        JSON=$(solo account create -n "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
         export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
-        export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n solo-test -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000 -n solo-test
+        export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n "${SOLO_NAMESPACE}" -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
+        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000 -n "${SOLO_NAMESPACE}"
         echo "accountId=$HEDERA_ACCOUNT_ID"
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY"
