@@ -17,6 +17,7 @@ jobs:
         id: solo
 
       - name: ✅ Validate Hedera Solo Outputs
+        shell: bash
         run: |
           echo "Debug: Checking outputs..."
           echo "accountId: ${{ steps.solo.outputs.accountId }}"
@@ -53,9 +54,11 @@ jobs:
         id: solo
 
       - name: 📦 Install curl
+        shell: bash
         run: sudo apt-get update && sudo apt-get install -y curl
 
       - name: ✅ Validate Mirror Node API
+        shell: bash
         run: |
           echo "Account ID: ${{ steps.solo.outputs.accountId }}"
           echo "Private Key: ${{ steps.solo.outputs.privateKey }}"

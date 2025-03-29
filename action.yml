@@ -90,7 +90,7 @@ runs:
         solo node keys --gossip-keys --tls-keys -i node0
 
         # Deploy network with specified Hedera version
-        solo network deploy -n "${SOLO_NAMESPACE}" -i node0 --release ${{ inputs.hederaVersion }}
+        solo network deploy --deployment "${SOLO_NAMESPACE}" -i node0 -t ${{ inputs.hederaVersion }}
 
         # Setup and start node
         solo node setup -n "${SOLO_NAMESPACE}" -i node0
