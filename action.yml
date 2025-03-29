@@ -79,18 +79,20 @@ runs:
       env:
         SOLO_CLUSTER_NAME: solo-cluster
         SOLO_NAMESPACE: solo-e2e
+        SOLO_CLUSTER_SETUP_NAMESPACE: solo-setup
+        SOLO_DEVELOPMENT: solo-deployment
       run: |
         # Initialize Solo environment
         solo init
 
-        # Setup cluster with the correct namespace flag
-        solo cluster setup -s "${SOLO_NAMESPACE}"
+        # Setup cluster with shared components
+        solo cluster setup -s "${SOLO_CLUSTER_SETUP_NAMESPACE}"
 
         # Generate keys for node0
         solo node keys --gossip-keys --tls-keys -i node0
 
-        # Deploy network with specified Hedera version, using only --deployment
-        solo network deploy --deployment "${SOLO_NAMESPACE}" -i node0 -t ${{ inputs.hederaVersion }}
+        # Deploy network with specified Hedera version
+        solo network deploy --deployment "${SOLO_DEVELOPMENT}" -i node0 -t ${{ inputs.hederaVersion }}
 
         # Setup and start node
         solo node setup -n "${SOLO_NAMESPACE}" -i node0
