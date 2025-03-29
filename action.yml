@@ -86,15 +86,23 @@ runs:
 
         # Create deployment with namespace and explicit context
         solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
+        echo "Checking deployment configmap..."
+        kubectl get configmap -n "${SOLO_NAMESPACE}" -l "solo.hedera.com/deployment=${SOLO_DEPLOYMENT}" || echo "No configmaps found for deployment"
 
         # Setup cluster with shared components
         solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
+        echo "Checking cluster setup resources..."
+        kubectl get all -n "${SOLO_NAMESPACE}" || echo "No resources found after cluster setup"
 
-        # Add a node with keys and deploy it (removed -i node0)
-        solo node add --deployment "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -t "${{ inputs.hederaVersion }}" -q
+        # Add a node with keys and deploy it, explicitly specify namespace
+        solo node add --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --gossip-keys --tls-keys -t "${{ inputs.hederaVersion }}" -q
+        echo "Checking nodes after node add..."
+        kubectl get pods -n "${SOLO_NAMESPACE}" -l "solo.hedera.com/node" || echo "No node pods found"
 
-        # Start the node (explicitly specify node0)
+        # Start the node
         solo node start --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
+        echo "Checking node status after start..."
+        kubectl get pods -n "${SOLO_NAMESPACE}" -l "solo.hedera.com/node=node0" || echo "No node0 pods found"
 
         # Background port-forward for network access
         kubectl port-forward svc/haproxy-node0-svc -n "${SOLO_NAMESPACE}" 50211:50211 &
