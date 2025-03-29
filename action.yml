@@ -93,6 +93,16 @@ runs:
         # Generate keys for node0
         solo node keys --deployment "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -i node0
 
+        # Debug configuration
+        echo "Debugging Solo configuration..."
+        solo deployment list
+        solo network deploy --deployment "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}" --dry-run || echo "Dry run failed"
+        cat ~/.solo/config.json || echo "No config file yet"
+        kubectl config current-context
+        kubectl get all -n "${SOLO_NAMESPACE}"
+        kubectl get secrets -n "${SOLO_NAMESPACE}"
+        kubectl get configmaps -n "${SOLO_NAMESPACE}"
+
         # Deploy network with node0
         solo network deploy --deployment "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}"
 
