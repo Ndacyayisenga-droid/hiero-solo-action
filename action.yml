@@ -93,8 +93,8 @@ runs:
         # Generate keys for node0
         solo node keys --deployment "${SOLO_DEPLOYMENT}" --gossip-keys --tls-keys -i node0
 
-        # Setup node0 as a consensus node
-        solo node setup --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
+        # Setup node0 as a consensus node (without -n)
+        solo node setup --deployment "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}"
 
         # Deploy network with node0
         solo network deploy --deployment "${SOLO_DEPLOYMENT}" -i node0 -t "${{ inputs.hederaVersion }}"
