@@ -84,10 +84,10 @@ runs:
         # Initialize Solo environment
         solo init
 
-        # Create deployment with namespace first, include email
-        solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --email "ci@example.com" -q
+        # Create deployment with namespace and explicit context
+        solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
 
-        # Connect KIND cluster to Solo after deployment is created
+        # Connect KIND cluster to Solo
         solo cluster connect -c "${SOLO_CLUSTER_NAME}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
 
         # Setup cluster with shared components
