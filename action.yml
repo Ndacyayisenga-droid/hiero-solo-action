@@ -87,10 +87,7 @@ runs:
         # Create deployment with namespace and explicit context
         solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
 
-        # Connect KIND cluster to Solo
-        solo cluster connect -c "${SOLO_CLUSTER_NAME}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
-
-        # Setup cluster with shared components
+        # Skip cluster connect and proceed to setup
         solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
 
         # Generate keys for node0
