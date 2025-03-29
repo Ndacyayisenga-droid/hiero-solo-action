@@ -18,6 +18,14 @@ jobs:
 
       - name: ✅ Validate Hedera Solo Outputs
         run: |
+          echo "Debug: Checking outputs..."
+          echo "accountId: ${{ steps.solo.outputs.accountId }}"
+          echo "privateKey: ${{ steps.solo.outputs.privateKey }}"
+          echo "publicKey: ${{ steps.solo.outputs.publicKey }}"
+
+          # Small delay to ensure outputs are set
+          sleep 5
+
           if [ -z "${{ steps.solo.outputs.accountId }}" ]; then
             echo "❌ Error: accountId is missing!"
             exit 1
@@ -44,22 +52,31 @@ jobs:
           installMirrorNode: true
         id: solo
 
+      - name: 📦 Install curl
+        run: sudo apt-get update && sudo apt-get install -y curl
+
       - name: ✅ Validate Mirror Node API
         run: |
           echo "Account ID: ${{ steps.solo.outputs.accountId }}"
           echo "Private Key: ${{ steps.solo.outputs.privateKey }}"
           echo "Public Key: ${{ steps.solo.outputs.publicKey }}"
-          
-          # Wait for the mirror node to be fully up and running
-          sleep 10
 
-          RESPONSE=$(curl -s -w "%{http_code}" -X 'GET' 'http://localhost:8080/api/v1/network/nodes' -H 'accept: application/json' -o response.json)
+          # Wait longer for Mirror Node to stabilize
+          echo "Waiting for Mirror Node to be ready..."
+          sleep 30
 
-          if [ "$RESPONSE" -ne 200 ]; then
-            echo "❌ Error: API request failed with status code $RESPONSE"
-            cat response.json
-            exit 1
-          else
-            echo "✅ API request successful"
-            cat response.json
-          fi
+          # Retry loop for API availability
+          for i in {1..5}; do
+            RESPONSE=$(curl -s -w "%{http_code}" -X 'GET' 'http://localhost:8080/api/v1/network/nodes' -H 'accept: application/json' -o response.json)
+            if [ "$RESPONSE" -eq 200 ]; then
+              echo "✅ API request successful"
+              cat response.json
+              exit 0
+            fi
+            echo "⚠️ Attempt $i: API not ready yet (status: $RESPONSE), retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "❌ Error: API request failed after retries with status code $RESPONSE"
+          cat response.json
+          exit 1

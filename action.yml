@@ -7,9 +7,9 @@ inputs:
     default: false
     type: boolean
   hederaVersion:
-    description: "Version of Hedera to use. Defaults to Mainnet version."
+    description: "Version of Hedera to use. Defaults to latest compatible version."
     required: false
-    default: "v0.52.2"
+    default: "v0.58.1"
   mirrorNodePort:
     description: "Port for Mirror Node"
     required: false
@@ -51,7 +51,7 @@ runs:
     - name: Setup Node
       uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
       with:
-        node-version: 22
+        node-version: 20.18.0
 
     - name: Install WGet CLI
       shell: bash
@@ -65,31 +65,31 @@ runs:
     - name: Setup Kind
       uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
       with:
-        version: v0.21.0
-        kubectl_version: v1.28.6
+        version: v0.23.0  # Updated to a more recent version
+        kubectl_version: v1.27.3
         cluster_name: solo-e2e
         wait: 120s
 
     - name: Install Solo
       shell: bash
-      run: npm install -g @hashgraph/solo@0.28.1
+      run: npm install -g @hashgraph/solo@0.35.0
 
     - name: Deploy Solo Test Network
       shell: bash
       run: |
-        solo init -i node0 -t ${{ inputs.hederaVersion }} -n solo-test --key-format pem --profile local
-        solo cluster setup
-        solo node keys --tls-keys --gossip-keys
-        solo network deploy
-        solo node setup
-        solo node start
+        solo init -i nodeণ -t ${{ inputs.hederaVersion }} -n solo-test --key-format pem --profile local
+        solo cluster setup -n solo-test
+        solo node keys --tls-keys --gossip-keys -i node0
+        solo network deploy -n solo-test -i node0
+        solo node setup -i node0
+        solo node start -i node0
         kubectl port-forward svc/haproxy-node0-svc -n solo-test 50211:50211 &
 
     - name: Deploy MirrorNode
-      if: ${{ inputs.installMirrorNode == 'true' }} # see https://github.com/actions/runner/issues/2238
+      if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
       run: |
-        solo mirror-node deploy
+        solo mirror-node deploy -n solo-test
         kubectl port-forward svc/fullstack-deployment-hedera-explorer -n solo-test ${{ inputs.mirrorNodePort }}:80 &
 
     - name: Deploy JSON-RPC-Relay
@@ -97,7 +97,7 @@ runs:
       shell: bash
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy
+        solo relay deploy -n solo-test
         echo "JSON-RPC-Relay installed successfully"
         kubectl port-forward svc/json-rpc-relay -n solo-test ${{ inputs.relayPort }}:7546 &
 
@@ -107,11 +107,11 @@ runs:
       env:
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        JSON=$(solo account create | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        JSON=$(solo account create -n solo-test | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
         export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n solo-test -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000
+        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000 -n solo-test
         echo "accountId=$HEDERA_ACCOUNT_ID"
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY"
@@ -119,7 +119,6 @@ runs:
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
 
-# Ref: https://haya14busa.github.io/github-action-brandings/
 branding:
   icon: "share-2"
   color: "black"
