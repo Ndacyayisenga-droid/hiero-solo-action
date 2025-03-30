@@ -9,7 +9,7 @@ inputs:
   hederaVersion:
     description: "Version of Hedera to use. Defaults to latest compatible version."
     required: false
-    default: "v0.58.1"
+    default: "v0.59.0"  # Updated to latest compatible version
   mirrorNodePort:
     description: "Port for Mirror Node"
     required: false
@@ -43,15 +43,15 @@ runs:
         echo "is installMirrorNode: ${{ inputs.installMirrorNode == 'true' }}"
 
     - name: Setup Java
-      uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
+      uses: actions/setup-java@v4
       with:
         distribution: temurin
         java-version: 21
 
     - name: Setup Node
-      uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+      uses: actions/setup-node@v4
       with:
-        node-version: 20.18.0
+        node-version: "20.18.0"
 
     - name: Install Wget CLI
       shell: bash
@@ -63,10 +63,10 @@ runs:
         python-version: "3.10"
 
     - name: Setup Kind
-      uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
+      uses: helm/kind-action@v1.10.0
       with:
-        version: v0.23.0
-        kubectl_version: v1.27.3
+        version: v1.29.1  # Updated to match solo requirements
+        kubectl_version: v1.29.1  # Updated to match solo requirements
         cluster_name: solo-cluster
         wait: 120s
 
@@ -85,24 +85,43 @@ runs:
         solo init
 
         # Create deployment with namespace and explicit context
-        solo deployment create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --context "kind-${SOLO_CLUSTER_NAME}" --email "ci@example.com" -q
-        echo "Checking deployment configmap..."
-        kubectl get configmap -n "${SOLO_NAMESPACE}" -l "solo.hedera.com/deployment=${SOLO_DEPLOYMENT}" || echo "No configmaps found for deployment"
+        solo deployment create \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}" \
+          --context "kind-${SOLO_CLUSTER_NAME}" \
+          --email "ci@example.com" \
+          --quiet-mode
 
         # Setup cluster with shared components
-        solo cluster setup -c "${SOLO_CLUSTER_NAME}" -s solo-setup
-        echo "Checking cluster setup resources..."
-        kubectl get all -n "${SOLO_NAMESPACE}" || echo "No resources found after cluster setup"
+        solo cluster setup \
+          --cluster-ref "${SOLO_CLUSTER_NAME}" \
+          --namespace "solo-setup"
 
-        # Add a node with keys and deploy it, explicitly specify namespace
-        solo node add --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --gossip-keys --tls-keys -t "${{ inputs.hederaVersion }}" -q
-        echo "Checking nodes after node add..."
-        kubectl get pods -n "${SOLO_NAMESPACE}" -l "solo.hedera.com/node" || echo "No node pods found"
+        # Add a node with keys and deploy it
+        solo node add \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}" \
+          --gossip-keys \
+          --tls-keys \
+          --release-tag "${{ inputs.hederaVersion }}" \
+          --quiet-mode
+
+        # Deploy the network
+        solo network deploy \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}"
+
+        # Setup the node
+        solo node setup \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}" \
+          --node-alias "node0"
 
         # Start the node
-        solo node start --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" -i node0 -t "${{ inputs.hederaVersion }}"
-        echo "Checking node status after start..."
-        kubectl get pods -n "${SOLO_NAMESPACE}" -l "solo.hedera.com/node=node0" || echo "No node0 pods found"
+        solo node start \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}" \
+          --node-alias "node0"
 
         # Background port-forward for network access
         kubectl port-forward svc/haproxy-node0-svc -n "${SOLO_NAMESPACE}" 50211:50211 &
@@ -114,7 +133,10 @@ runs:
         SOLO_NAMESPACE: solo-e2e
         SOLO_DEPLOYMENT: solo-deployment
       run: |
-        solo mirror-node deploy --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}"
+        solo mirror-node deploy \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}" \
+          --mirror-node-version "v0.126.0"
         kubectl port-forward svc/fullstack-deployment-hedera-explorer -n "${SOLO_NAMESPACE}" ${{ inputs.mirrorNodePort }}:80 &
 
     - name: Deploy JSON-RPC-Relay
@@ -125,7 +147,10 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}"
+        solo relay deploy \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}" \
+          --relay-release "v0.66.0"
         echo "JSON-RPC-Relay installed successfully"
         kubectl port-forward svc/json-rpc-relay -n "${SOLO_NAMESPACE}" ${{ inputs.relayPort }}:7546 &
 
@@ -137,14 +162,15 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: |
-        JSON=$(solo account create --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        JSON=$(solo account create --deployment "${SOLO_DEPLOYMENT}" --namespace "${SOLO_NAMESPACE}" | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
         export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n "${SOLO_NAMESPACE}" -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --deployment "${SOLO_DEPLOYMENT}" -n "${SOLO_NAMESPACE}" --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000
-        echo "accountId=$HEDERA_ACCOUNT_ID"
-        echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY"
-        echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY"
+        solo account update \
+          --deployment "${SOLO_DEPLOYMENT}" \
+          --namespace "${SOLO_NAMESPACE}" \
+          --account-id $HEDERA_ACCOUNT_ID \
+          --hbar-amount 10000000
         echo "accountId=$HEDERA_ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
