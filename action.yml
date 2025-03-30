@@ -49,13 +49,13 @@ runs:
         distribution: temurin
         java-version: 21
 
-    - name: Setup Node
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: "20.18.0"
         cache: 'npm'
 
-    - name: Install Dependencies
+    - name: Install System Dependencies
       shell: bash
       run: |
         sudo apt-get update
@@ -73,7 +73,7 @@ runs:
         version: v1.29.1
         kubectl_version: v1.29.1
         cluster_name: solo-cluster
-        wait: 180s  # Increased wait time for cluster stability
+        wait: 180s
         config: |
           kind: Cluster
           apiVersion: kind.x-k8s.io/v1alpha4
@@ -108,18 +108,23 @@ runs:
           --email "ci@example.com" \
           --quiet-mode
 
-    - name: Setup Network Components
+    - name: Setup Cluster Components
       shell: bash
       env:
         SOLO_CLUSTER_NAME: solo-cluster
         SOLO_NAMESPACE: solo-e2e
-        SOLO_DEPLOYMENT: solo-deployment
       run: |
         solo cluster setup \
           --cluster-ref "${SOLO_CLUSTER_NAME}" \
           --namespace "solo-setup" \
           --quiet-mode
 
+    - name: Deploy Network Node
+      shell: bash
+      env:
+        SOLO_DEPLOYMENT: solo-deployment
+        SOLO_NAMESPACE: solo-e2e
+      run: |
         solo node add \
           --deployment "${SOLO_DEPLOYMENT}" \
           --namespace "${SOLO_NAMESPACE}" \
