@@ -1,5 +1,5 @@
 name: "Hiero Solo Action"
-description: "Run a Hiero based network by using the solo tool"
+description: "Run a Hiero-based network by using the solo tool"
 inputs:
   installMirrorNode:
     description: "Defines if a mirror node should be installed"
@@ -9,13 +9,13 @@ inputs:
   hederaVersion:
     description: "Version of Hedera to use. Defaults to Mainnet version."
     required: false
-    default: "v0.52.2"
+    default: "v0.58.1"
   mirrorNodePort:
     description: "Port for Mirror Node"
     required: false
     default: "8080"
   installRelay:
-    description: 'Install JSON-RPC-Relay'
+    description: "Install JSON-RPC-Relay"
     required: false
     default: false
     type: boolean
@@ -36,7 +36,7 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: print inputs
+    - name: Print inputs
       shell: bash
       run: |
         echo "installMirrorNode: ${{ inputs.installMirrorNode }}"
@@ -62,64 +62,112 @@ runs:
       with:
         python-version: "3.10"
 
-    - name: Setup Kind
-      uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
+    - name: Setup Helm
+      uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
       with:
-        version: v0.21.0
-        kubectl_version: v1.28.6
-        cluster_name: solo-e2e
+        version: "v3.12.3" # helm version
+
+    - name: Setup Kind
+      uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
+      with:
+        install_only: true
+        node_image: kindest/node:v1.31.4@sha256:2cb39f7295fe7eafee0842b1052a599a4fb0f8bcf3f83d96c7f4864c357c6c30
+        version: v0.26.0
+        kubectl_version: v1.31.4
+        verbosity: 3
         wait: 120s
 
     - name: Install Solo
       shell: bash
-      run: npm install -g @hashgraph/solo@0.28.1
+      run: npm install -g @hashgraph/solo@0.35.1
 
     - name: Deploy Solo Test Network
       shell: bash
       run: |
-        solo init -i node0 -t ${{ inputs.hederaVersion }} -n solo-test --key-format pem --profile local
-        solo cluster setup
-        solo node keys --tls-keys --gossip-keys
-        solo network deploy
-        solo node setup
-        solo node start
-        kubectl port-forward svc/haproxy-node0-svc -n solo-test 50211:50211 &
+        # Define environment variables
+        export SOLO_CLUSTER_NAME=solo-cluster
+        export SOLO_NAMESPACE=solo
+        export SOLO_DEPLOYMENT=solo-deployment
+        export SOLO_EMAIL=solo-action@hiero.org
+        
+        # Create Kind cluster
+        kind create cluster -n "${SOLO_CLUSTER_NAME}"
+        
+        # Initialize solo and deploy network
+        solo init
+        solo deployment create --node-aliases node1 --namespace "${SOLO_NAMESPACE}" --context kind-${SOLO_CLUSTER_NAME} --email "${SOLO_EMAIL}" --deployment-clusters kind-${SOLO_CLUSTER_NAME} --deployment "${SOLO_DEPLOYMENT}"
+        solo node keys --node-aliases node1 --gossip-keys --tls-keys --quiet-mode
+        solo cluster setup --cluster-setup-namespace "${SOLO_CLUSTER_NAME}" --quiet-mode    
+        solo network deploy --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
+        solo node setup --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
+        solo node start --node-aliases node1 --deployment "${SOLO_DEPLOYMENT}"
 
-    - name: Deploy MirrorNode
-      if: ${{ inputs.installMirrorNode == 'true' }} # see https://github.com/actions/runner/issues/2238
+    - name: Verify Network Status
       shell: bash
       run: |
-        solo mirror-node deploy
-        kubectl port-forward svc/fullstack-deployment-hedera-explorer -n solo-test ${{ inputs.mirrorNodePort }}:80 &
+        echo "Checking network status..."
+        kubectl get pods -n ${SOLO_NAMESPACE} --context kind-${SOLO_CLUSTER_NAME}
+        solo network status --deployment ${SOLO_DEPLOYMENT} --context kind-${SOLO_CLUSTER_NAME} || { echo "Network status check failed"; exit 1; }
 
-    - name: Deploy JSON-RPC-Relay
-      if: ${{ inputs.installRelay == 'true' }}
-      shell: bash
-      run: |
-        echo "Installing JSON-RPC-Relay..."
-        solo relay deploy
-        echo "JSON-RPC-Relay installed successfully"
-        kubectl port-forward svc/json-rpc-relay -n solo-test ${{ inputs.relayPort }}:7546 &
-
-    - name: Create account
+    - name: Create Account
       id: create-account
       shell: bash
       env:
         GITHUB_ACTION_PATH: ${{ github.action_path }}
+        SOLO_NAMESPACE: solo
+        SOLO_CLUSTER_NAME: solo-cluster
+        SOLO_DEPLOYMENT: solo-deployment
       run: |
-        JSON=$(solo account create | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
-        export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
-        export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
-        export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n solo-test -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000
-        echo "accountId=$HEDERA_ACCOUNT_ID"
-        echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY"
-        echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY"
+        # Debug: Verify cluster context and namespace
+        echo "Current context: $(kubectl config current-context)"
+        echo "Namespace: ${SOLO_NAMESPACE}"
+
+        # Run solo account create and capture output
+        echo "Running solo account create..."
+        solo account create --context kind-${SOLO_CLUSTER_NAME} --namespace ${SOLO_NAMESPACE} > account_output.txt 2>&1 || {
+          echo "solo account create failed with exit code $?"
+          cat account_output.txt
+          exit 1
+        }
+        echo "Raw output of solo account create:"
+        cat account_output.txt
+
+        # Process the output with the Python script
+        JSON=$(cat account_output.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
+          echo "Failed to process solo account create output with extractAccountAsJson.py"
+          exit 1
+        }
+        echo "Parsed JSON: $JSON"
+
+        # Extract account details
+        export HEDERA_ACCOUNT_ID=$(echo "$JSON" | jq -r '.accountId')
+        export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo "$JSON" | jq -r '.publicKey')
+
+        # Debug: Check for secret existence
+        echo "Checking for secret account-key-$HEDERA_ACCOUNT_ID in namespace ${SOLO_NAMESPACE}..."
+        kubectl get secret -n ${SOLO_NAMESPACE} --context kind-${SOLO_CLUSTER_NAME} || echo "No secrets found in namespace ${SOLO_NAMESPACE}"
+        kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n ${SOLO_NAMESPACE} --context kind-${SOLO_CLUSTER_NAME} || echo "Secret account-key-$HEDERA_ACCOUNT_ID not found"
+
+        # Extract private key from secret
+        export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n ${SOLO_NAMESPACE} --context kind-${SOLO_CLUSTER_NAME} -o jsonpath='{.data.privateKey}' | base64 -d | xargs) || {
+          echo "Failed to retrieve private key for account $HEDERA_ACCOUNT_ID"
+          exit 1
+        }
+
+        # Update account with HBAR
+        solo account update --account-id $HEDERA_ACCOUNT_ID --hbar-amount 10000000 --context kind-${SOLO_CLUSTER_NAME} --namespace ${SOLO_NAMESPACE} || {
+          echo "Failed to update account $HEDERA_ACCOUNT_ID"
+          exit 1
+        }
+
+        # Log and set outputs
+        echo "Account ID: $HEDERA_ACCOUNT_ID"
+        echo "Public Key: $HEDERA_ACCOUNT_PUBLIC_KEY"
+        echo "Private Key: $HEDERA_ACCOUNT_PRIVATE_KEY"
         echo "accountId=$HEDERA_ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "publicKey=$HEDERA_ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$HEDERA_ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
 
-# Ref: https://haya14busa.github.io/github-action-brandings/
 branding:
   icon: "share-2"
   color: "black"
