@@ -81,7 +81,7 @@ runs:
         solo init
         solo cluster setup
         solo node keys --gossip-keys --tls-keys -i node1,node2,node3
-        solo network deploy -i node1,node2,node3 solo-e2e
+        solo network deploy -i node1,node2,node3 -n "${cluster_name}"
         solo node setup
         solo node start
         kubectl port-forward svc/haproxy-node0-svc -n solo-test 50211:50211 &
