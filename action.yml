@@ -106,7 +106,7 @@ runs:
         solo cluster setup -s $SOLO_CLUSTER_SETUP_NAMESPACE
 
         # Deploy network
-        solo network deploy -i node1,node2,node3 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo network deploy -i node1,node2,node3 --deployment $SOLO_DEPLOYMENT
 
         # Setup nodes
         solo node setup -i node1,node2,node3 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
