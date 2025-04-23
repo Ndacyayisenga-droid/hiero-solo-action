@@ -77,9 +77,9 @@ runs:
     - name: Deploy Solo Test Network
       shell: bash
       run: |
+        kind create cluster
         solo init
         solo cluster setup
-        kind create cluster
         solo node keys --gossip-keys --tls-keys -i node1,node2,node3
         solo network deploy -i node1,node2,node3 solo-e2e
         solo node setup
