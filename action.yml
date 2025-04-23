@@ -49,10 +49,9 @@ runs:
         java-version: 21
 
     - name: Setup Node
-      uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+      uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
       with:
-        node-version: 20
-        cache: npm
+        node-version: 22
 
     - name: Install WGet CLI
       shell: bash
