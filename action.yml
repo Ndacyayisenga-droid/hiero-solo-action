@@ -115,8 +115,16 @@ runs:
         # Start nodes
         solo node start -i node1,node2,node3 --deployment $SOLO_DEPLOYMENT
 
-        # Port forward HAProxy
-        kubectl port-forward svc/haproxy-node1 -n $SOLO_NAMESPACE 50211:50211 &
+        # Debug: List services in the solo namespace
+        echo "Listing services in namespace $SOLO_NAMESPACE:"
+        kubectl get svc -n $SOLO_NAMESPACE
+
+        # Port forward HAProxy (only if service exists)
+        if kubectl get svc solo-deployment-haproxy-node1 -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/solo-deployment-haproxy-node1 -n $SOLO_NAMESPACE 50211:50211 &
+        else
+          echo "HAProxy service solo-deployment-haproxy-node1 not found, skipping port-forward"
+        fi
 
     - name: Deploy MirrorNode
       if: ${{ inputs.installMirrorNode == 'true' }}
