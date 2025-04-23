@@ -120,10 +120,10 @@ runs:
         kubectl get svc -n $SOLO_NAMESPACE
 
         # Port forward HAProxy (only if service exists)
-        if kubectl get svc solo-deployment-haproxy-node1 -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/solo-deployment-haproxy-node1 -n $SOLO_NAMESPACE 50211:50211 &
+        if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE 50211:50211 &
         else
-          echo "HAProxy service solo-deployment-haproxy-node1 not found, skipping port-forward"
+          echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
         fi
 
     - name: Deploy MirrorNode
@@ -134,8 +134,15 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         solo mirror-node deploy --deployment $SOLO_DEPLOYMENT
-        # Port forward mirror node REST API
-        kubectl port-forward svc/solo-deployment-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePort }}:8080 &
+        # Debug: List services in the solo namespace
+        echo "Listing services in namespace $SOLO_NAMESPACE:"
+        kubectl get svc -n $SOLO_NAMESPACE
+        # Port forward mirror node REST API (only if service exists)
+        if kubectl get svc solo-deployment-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/solo-deployment-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePort }}:8080 &
+        else
+          echo "Mirror node service solo-deployment-rest not found, skipping port-forward"
+        fi
 
     - name: Deploy JSON-RPC-Relay
       if: ${{ inputs.installRelay == 'true' }}
@@ -147,7 +154,15 @@ runs:
         echo "Installing JSON-RPC-Relay..."
         solo relay deploy -i node1,node2,node3 --deployment $SOLO_DEPLOYMENT
         echo "JSON-RPC-Relay installed successfully"
-        kubectl port-forward svc/relay-node1-node2-node3-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:8080 &
+        # Debug: List services in the solo namespace
+        echo "Listing services in namespace $SOLO_NAMESPACE:"
+        kubectl get svc -n $SOLO_NAMESPACE
+        # Port forward JSON-RPC-Relay (only if service exists)
+        if kubectl get svc relay-node1-node2-node3-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/relay-node1-node2-node3-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:8080 &
+        else
+          echo "JSON-RPC-Relay service relay-node1-node2-node3-hedera-json-rpc-relay not found, skipping port-forward"
+        fi
 
     - name: Create account
       id: create-account
@@ -157,7 +172,15 @@ runs:
         SOLO_NAMESPACE: solo
         SOLO_DEPLOYMENT: solo-deployment
       run: |
-        JSON=$(solo account create --deployment $SOLO_DEPLOYMENT | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py)
+        # Debug: Capture raw output of solo account create
+        echo "Running solo account create..."
+        solo account create --deployment $SOLO_DEPLOYMENT > account_create_output.txt
+        cat account_create_output.txt
+        # Run the command with Python script, exit on error
+        JSON=$(cat account_create_output.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
+          echo "Error: Python script extractAccountAsJson.py failed"
+          exit 1
+        }
         export HEDERA_ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export HEDERA_ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export HEDERA_ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$HEDERA_ACCOUNT_ID -n $SOLO_NAMESPACE -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
