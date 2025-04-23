@@ -100,7 +100,7 @@ runs:
         solo node keys --gossip-keys --tls-keys -i node1,node2,node3
 
         # Create deployment
-        solo deployment create -n $SOLO_NAMESPACE --context kind-$SOLO_CLUSTER_NAME --email $SOLO_EMAIL --deployment-clusters kind-$SOLO_CLUSTER_NAME --deployment $SOLO_DEPLOYMENT
+        solo deployment create -n $SOLO_NAMESPACE --context kind-$SOLO_CLUSTER_NAME --email $SOLO_EMAIL --deployment-clusters kind-$SOLO_CLUSTER_NAME --deployment $SOLO_DEPLOYMENT --node-aliases node1,node2,node3
 
         # Setup cluster
         solo cluster setup -s $SOLO_CLUSTER_SETUP_NAMESPACE --deployment $SOLO_DEPLOYMENT
