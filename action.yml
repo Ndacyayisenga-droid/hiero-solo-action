@@ -94,10 +94,10 @@ runs:
         SOLO_EMAIL: ${{ inputs.email }}
       run: |
         # Initialize solo
-        solo init --namespace $SOLO_NAMESPACE
+        solo init
 
         # Generate node keys
-        solo node keys --gossip-keys --tls-keys -i node1,node2,node3 --namespace $SOLO_NAMESPACE
+        solo node keys --gossip-keys --tls-keys -i node1,node2,node3
 
         # Create deployment
         solo deployment create -n $SOLO_NAMESPACE --context kind-$SOLO_CLUSTER_NAME --email $SOLO_EMAIL --deployment-clusters kind-$SOLO_CLUSTER_NAME --deployment $SOLO_DEPLOYMENT
