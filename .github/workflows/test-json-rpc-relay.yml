@@ -1,4 +1,4 @@
-name: JSON-RPC Relay Test
+name: JSON-RPC Relay Validation
 
 on:
   pull_request:
@@ -6,45 +6,63 @@ on:
       - main
 
 jobs:
-  test-json-rpc-relay:
+  validate-json-rpc-relay:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: 🚀 Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Setup Hedera Solo with JSON-RPC Relay
+      - name: ⚙️ Setup Hedera Solo with JSON-RPC Relay
         uses: ./
         with:
           installRelay: true
         id: solo
 
-      - name: Wait for JSON-RPC Relay service
+      - name: ✅ Validate Hedera Solo Outputs
         run: |
-          echo "Waiting for JSON-RPC Relay service to be available..."
-          for i in {1..150}; do
-            if kubectl get svc json-rpc-relay -n solo-test &> /dev/null; then
-              echo "✅ JSON-RPC Relay service is available."
-              break
-            fi
-            echo "⏳ JSON-RPC Relay service not found... retrying in 5 seconds"
-            sleep 5
-          done
-          
-          # Ensure port-forwarding is set up before checking the API
-          kubectl port-forward svc/json-rpc-relay -n solo-test 7546:7546 &
-      - name: Validate JSON-RPC Relay API
+          if [ -z "${{ steps.solo.outputs.accountId }}" ]; then
+            echo "❌ Error: accountId is missing!"
+            exit 1
+          fi
+          if [ -z "${{ steps.solo.outputs.privateKey }}" ]; then
+            echo "❌ Error: privateKey is missing!"
+            exit 1
+          fi
+          if [ -z "${{ steps.solo.outputs.publicKey }}" ]; then
+            echo "❌ Error: publicKey is missing!"
+            exit 1
+          fi
+          echo "🎉 All outputs are valid!"
+          echo "Account ID: ${{ steps.solo.outputs.accountId }}"
+          echo "Public Key: ${{ steps.solo.outputs.publicKey }}"
+          echo "Private Key: ${{ steps.solo.outputs.privateKey }}"
+
+      - name: ✅ Validate JSON-RPC Relay
         run: |
-          echo "Testing JSON-RPC Relay API..."
-          for i in {1..30}; do
-            RESPONSE=$(curl -s -X POST http://localhost:7546 \
-              -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
-            if [ -n "$RESPONSE" ] && echo "$RESPONSE" | grep -q "result"; then
-              echo "✅ Relay is responding correctly: $RESPONSE"
-              exit 0
-            fi
-            echo "⏳ Relay not ready yet... retrying in 5 seconds"
-            sleep 5
-          done
-          echo "❌ Relay did not start correctly."
-          exit 1
+          # Wait for the JSON-RPC Relay to be fully up and running
+          sleep 10
+
+          # Send a JSON-RPC request to eth_chainId
+          RESPONSE=$(curl -s -w "%{http_code}" -X POST 'http://localhost:7546' \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+            -o response.json)
+
+          if [ "$RESPONSE" -ne 200 ]; then
+            echo "❌ Error: JSON-RPC request failed with status code $RESPONSE"
+            cat response.json
+            exit 1
+          fi
+
+          # Check if the response contains a valid chainId
+          CHAIN_ID=$(jq -r '.result' response.json)
+          if [ -z "$CHAIN_ID" ] || [ "$CHAIN_ID" = "null" ]; then
+            echo "❌ Error: Invalid or missing chainId in response"
+            cat response.json
+            exit 1
+          fi
+
+          echo "✅ JSON-RPC Relay request successful"
+          echo "Chain ID: $CHAIN_ID"
+          cat response.json
+      
