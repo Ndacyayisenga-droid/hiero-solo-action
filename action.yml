@@ -79,7 +79,7 @@ runs:
       run: |
         solo init
         solo cluster setup
-        solo node keys
+        solo node keys --gossip-keys --tls-keys -i node1,node2,node3
         solo network deploy
         solo node setup
         solo node start
