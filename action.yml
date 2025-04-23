@@ -138,10 +138,10 @@ runs:
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
         # Port forward mirror node REST API (only if service exists)
-        if kubectl get svc solo-deployment-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/solo-deployment-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePort }}:8080 &
+        if kubectl get svc mirror-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePort }}:80 &
         else
-          echo "Mirror node service solo-deployment-rest not found, skipping port-forward"
+          echo "Mirror node service mirror-rest not found, skipping port-forward"
         fi
 
     - name: Deploy JSON-RPC-Relay
