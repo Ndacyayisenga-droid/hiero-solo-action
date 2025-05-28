@@ -139,21 +139,25 @@ runs:
         solo deployment create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --quiet-mode
 
         # Generate node keys
-        solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --cluster-ref $SOLO_CLUSTER_NAME > node_keys_output.txt 2>&1
+        solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE > node_keys_output.txt 2>&1
         cat node_keys_output.txt
 
         # Deploy network
-        solo network deploy --node-aliases node1 --dependency $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo network deploy --node-aliases node1 -d $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE > network_deploy_output.txt 2>&1
+        cat network_deploy_output.txt
 
         # Setup node
-        solo node setup --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE -t $HIERO_VERSION --quiet-mode
+        solo node setup --node-aliases node1 --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE -t $HIERO_VERSION --quiet-mode > node_setup_output.txt 2>&1
+        cat node_setup_output.txt
 
         # Start node
-        solo node start --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo node start --node-aliases node1 --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE > node_start_output.txt 2>&1
+        cat node_start_output.txt
 
         # Debug: List deployments
         echo "Listing deployments:"
-        solo deployment list
+        solo deployment list --cluster-ref $SOLO_CLUSTER_NAME > deployment_list_output.txt 2>&1
+        cat deployment_list_output.txt
 
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
@@ -173,7 +177,7 @@ runs:
         SOLO_NAMESPACE: solo
         SOLO_DEPLOYMENT: solo-deployment
       run: |
-        solo mirror-node deploy --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo mirror-node deploy --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
@@ -198,7 +202,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo relay deploy --node-aliases node1 --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE
         echo "JSON-RPC-Relay installed successfully"
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
@@ -219,7 +223,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Creating ECDSA account..."
-        solo account create --generate-ecdsa-key --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE > account_create_output_ecdsa.txt
+        solo account create --generate-ecdsa-key --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE > account_create_output_ecdsa.txt
         cat account_create_output_ecdsa.txt
         JSON=$(cat account_create_output_ecdsa.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
           echo "Error: Python script extractAccountAsJson.py failed"
@@ -228,7 +232,7 @@ runs:
         export ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$ACCOUNT_ID -n $SOLO_NAMESPACE -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE
         echo "accountId=$ACCOUNT_ID"
         echo "publicKey=$ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$ACCOUNT_PRIVATE_KEY"
@@ -245,7 +249,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Creating ED25519 account..."
-        solo account create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE > account_create_output_ed25519.txt
+        solo account create --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE > account_create_output_ed25519.txt
         cat account_create_output_ed25519.txt
         JSON=$(cat account_create_output_ed25519.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
           echo "Error: Python script extractAccountAsJson.py failed"
@@ -254,7 +258,7 @@ runs:
         export ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$ACCOUNT_ID -n $SOLO_NAMESPACE -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE
         echo "accountId=$ACCOUNT_ID"
         echo "publicKey=$ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$ACCOUNT_PRIVATE_KEY"
