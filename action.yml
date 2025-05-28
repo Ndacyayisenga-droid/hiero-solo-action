@@ -109,17 +109,25 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
         HIERO_VERSION: ${{ inputs.hieroVersion }}
       run: |
+        # Create namespaces
+        kubectl create namespace $SOLO_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace $SOLO_CLUSTER_SETUP_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
         # Initialize solo
         solo init
+
+        # Setup cluster
+        solo cluster setup --namespace $SOLO_CLUSTER_SETUP_NAMESPACE
+
+        # Debug: Check for solo-remote-config ConfigMap
+        echo "Checking for solo-remote-config ConfigMap in namespace $SOLO_NAMESPACE:"
+        kubectl get configmap solo-remote-config -n $SOLO_NAMESPACE || echo "ConfigMap solo-remote-config not found"
 
         # Create deployment
         solo deployment create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --quiet-mode
 
         # Generate node keys
         solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
-
-        # Setup cluster
-        solo cluster setup --namespace $SOLO_CLUSTER_SETUP_NAMESPACE
 
         # Deploy network
         solo network deploy --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
