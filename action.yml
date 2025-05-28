@@ -1,5 +1,5 @@
 name: "Hiero Solo Action"
-description: "Run a Hiero based network by using the solo tool"
+description: "Run a Hiero-based network using the solo tool"
 inputs:
   installMirrorNode:
     description: "Defines if a mirror node should be installed"
@@ -7,7 +7,7 @@ inputs:
     default: false
     type: boolean
   hieroVersion:
-    description: "Version of Hiero consensus node to be use."
+    description: "Version of Hiero consensus node to use"
     required: false
     default: "v0.58.10"
   mirrorNodePortRest:
@@ -28,21 +28,21 @@ inputs:
     required: false
     default: "7546"
   email:
-    description: "Email for deployment configuration"
-    required: true
+    description: "Email for deployment configuration (optional)"
+    required: false
     default: "user@example.com"
 outputs:
   accountId:
-    description: "Account ID of the generated ED25519 account (default for simplicity)"
+    description: "Account ID of the generated ED25519 account"
     value: ${{ steps.create-ed25519.outputs.accountId }}
   publicKey:
-    description: "Public key of the generated ED25519 account (default for simplicity)"
+    description: "Public key of the generated ED25519 account"
     value: ${{ steps.create-ed25519.outputs.publicKey }}
   privateKey:
-    description: "Private key of the generated ED25519 account (default for simplicity)"
+    description: "Private key of the generated ED25519 account"
     value: ${{ steps.create-ed25519.outputs.privateKey }}
   ecdsaAccountId:
-    description: "ECDSA account id of generated account"
+    description: "ECDSA account ID of generated account"
     value: ${{ steps.create-ecdsa.outputs.accountId }}
   ecdsaPublicKey:
     description: "ECDSA public key of generated account"
@@ -51,7 +51,7 @@ outputs:
     description: "ECDSA private key of generated account"
     value: ${{ steps.create-ecdsa.outputs.privateKey }}
   ed25519AccountId:
-    description: "ED25519 account id of generated account"
+    description: "ED25519 account ID of generated account"
     value: ${{ steps.create-ed25519.outputs.accountId }}
   ed25519PublicKey:
     description: "ED25519 public key of generated account"
@@ -107,29 +107,32 @@ runs:
         SOLO_NAMESPACE: solo
         SOLO_CLUSTER_SETUP_NAMESPACE: solo-cluster
         SOLO_DEPLOYMENT: solo-deployment
-        SOLO_EMAIL: ${{ inputs.email }}
         HIERO_VERSION: ${{ inputs.hieroVersion }}
       run: |
         # Initialize solo
         solo init
 
         # Generate node keys
-        solo node keys --gossip-keys --tls-keys -i node1
+        solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
 
         # Create deployment
-        solo deployment create -n $SOLO_NAMESPACE --context kind-$SOLO_CLUSTER_NAME --email $SOLO_EMAIL --deployment-clusters kind-$SOLO_CLUSTER_NAME --deployment $SOLO_DEPLOYMENT --node-aliases node1
+        solo deployment create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --quiet-mode
 
         # Setup cluster
-        solo cluster setup -s $SOLO_CLUSTER_SETUP_NAMESPACE
+        solo cluster setup --namespace $SOLO_CLUSTER_SETUP_NAMESPACE
 
         # Deploy network
-        solo network deploy -i node1 --deployment $SOLO_DEPLOYMENT
+        solo network deploy --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
 
         # Setup node
-        solo node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
+        solo node setup --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE -t $HIERO_VERSION --quiet-mode
 
         # Start node
-        solo node start -i node1 --deployment $SOLO_DEPLOYMENT
+        solo node start --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+
+        # Debug: List deployments
+        echo "Listing deployments:"
+        solo deployment list
 
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
@@ -143,13 +146,13 @@ runs:
         fi
 
     - name: Deploy MirrorNode
-      if: ${{ inputs.installMirrorNode == 'true' }} # see https://github.com/actions/runner/issues/2238
+      if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
       env:
         SOLO_NAMESPACE: solo
         SOLO_DEPLOYMENT: solo-deployment
       run: |
-        solo mirror-node deploy --deployment $SOLO_DEPLOYMENT
+        solo mirror-node deploy --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
@@ -174,7 +177,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy -i node1 --deployment $SOLO_DEPLOYMENT
+        solo relay deploy --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
         echo "JSON-RPC-Relay installed successfully"
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
@@ -183,7 +186,7 @@ runs:
         if kubectl get svc relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:7546 &
         else
-          echo "JSON-RPC-Relay service relay-node1-hedera-json-rpc-relay not found, Skipping port-forward"
+          echo "JSON-RPC-Relay service relay-node1-hedera-json-rpc-relay not found, skipping port-forward"
         fi
 
     - name: Create ECDSA Account
@@ -195,7 +198,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Creating ECDSA account..."
-        solo account create --generate-ecdsa-key --deployment $SOLO_DEPLOYMENT > account_create_output_ecdsa.txt
+        solo account create --generate-ecdsa-key --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE > account_create_output_ecdsa.txt
         cat account_create_output_ecdsa.txt
         JSON=$(cat account_create_output_ecdsa.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
           echo "Error: Python script extractAccountAsJson.py failed"
@@ -204,7 +207,7 @@ runs:
         export ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$ACCOUNT_ID -n $SOLO_NAMESPACE -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT
+        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
         echo "accountId=$ACCOUNT_ID"
         echo "publicKey=$ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$ACCOUNT_PRIVATE_KEY"
@@ -221,7 +224,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Creating ED25519 account..."
-        solo account create --deployment $SOLO_DEPLOYMENT > account_create_output_ed25519.txt
+        solo account create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE > account_create_output_ed25519.txt
         cat account_create_output_ed25519.txt
         JSON=$(cat account_create_output_ed25519.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
           echo "Error: Python script extractAccountAsJson.py failed"
@@ -230,7 +233,7 @@ runs:
         export ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$ACCOUNT_ID -n $SOLO_NAMESPACE -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT
+        solo account update --account-id $ACCOUNT_ID --hbar-amount 10000000 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
         echo "accountId=$ACCOUNT_ID"
         echo "publicKey=$ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$ACCOUNT_PRIVATE_KEY"
@@ -238,7 +241,6 @@ runs:
         echo "publicKey=$ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
 
-# Ref: https://haya14busa.github.io/github-action-brandings/
 branding:
   icon: "share-2"
   color: "black"
