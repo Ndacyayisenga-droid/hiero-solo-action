@@ -99,6 +99,8 @@ runs:
     - name: Install Solo
       shell: bash
       run: npm install -g @hashgraph/solo@0.36.0
+      # Consider upgrading to @hashgraph/solo@latest after testing:
+      # run: npm install -g @hashgraph/solo@latest
 
     - name: Deploy Solo Test Network
       shell: bash
@@ -118,21 +120,27 @@ runs:
 
         # Setup cluster
         echo "Running solo cluster-ref setup..."
-        solo cluster-ref setup -s $SOLO_CLUSTER_SETUP_NAMESPACE
+        solo cluster-ref setup -s $SOLO_CLUSTER_SETUP_NAMESPACE --cluster-ref $SOLO_CLUSTER_NAME > cluster_setup_output.txt 2>&1
+        cat cluster_setup_output.txt
 
-        # Debug: Check for solo-remote-config ConfigMap
+        # Debug: Check for solo-remote-config ConfigMap in both namespaces
         echo "Checking for solo-remote-config ConfigMap in namespace $SOLO_NAMESPACE:"
-        kubectl get configmap solo-remote-config -n $SOLO_NAMESPACE || echo "ConfigMap solo-remote-config not found"
+        kubectl get configmap solo-remote-config -n $SOLO_NAMESPACE || echo "ConfigMap solo-remote-config not found in $SOLO_NAMESPACE"
+        echo "Checking for solo-remote-config ConfigMap in namespace $SOLO_CLUSTER_SETUP_NAMESPACE:"
+        kubectl get configmap solo-remote-config -n $SOLO_CLUSTER_SETUP_NAMESPACE || echo "ConfigMap solo-remote-config not found in $SOLO_CLUSTER_SETUP_NAMESPACE"
 
-        # Debug: List all ConfigMaps in namespace
+        # Debug: List all ConfigMaps in both namespaces
         echo "Listing all ConfigMaps in namespace $SOLO_NAMESPACE:"
         kubectl get configmap -n $SOLO_NAMESPACE
+        echo "Listing all ConfigMaps in namespace $SOLO_CLUSTER_SETUP_NAMESPACE:"
+        kubectl get configmap -n $SOLO_CLUSTER_SETUP_NAMESPACE
 
         # Create deployment
         solo deployment create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --quiet-mode
 
         # Generate node keys
-        solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --cluster-ref $SOLO_CLUSTER_NAME > node_keys_output.txt 2>&1
+        cat node_keys_output.txt
 
         # Deploy network
         solo network deploy --node-aliases node1 --dependency $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
