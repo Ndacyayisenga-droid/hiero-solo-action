@@ -117,11 +117,15 @@ runs:
         solo init
 
         # Setup cluster
-        solo cluster setup --namespace $SOLO_CLUSTER_SETUP_NAMESPACE
+        solo cluster-ref setup --namespace $SOLO_CLUSTER_SETUP_NAMESPACE
 
         # Debug: Check for solo-remote-config ConfigMap
         echo "Checking for solo-remote-config ConfigMap in namespace $SOLO_NAMESPACE:"
         kubectl get configmap solo-remote-config -n $SOLO_NAMESPACE || echo "ConfigMap solo-remote-config not found"
+
+        # Debug: List all ConfigMaps in namespace
+        echo "Listing all ConfigMaps in namespace $SOLO_NAMESPACE:"
+        kubectl get configmap -n $SOLO_NAMESPACE
 
         # Create deployment
         solo deployment create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --quiet-mode
@@ -130,7 +134,7 @@ runs:
         solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
 
         # Deploy network
-        solo network deploy --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
+        solo network deploy --node-aliases node1 --dependency $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
 
         # Setup node
         solo node setup --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE -t $HIERO_VERSION --quiet-mode
@@ -249,6 +253,6 @@ runs:
         echo "publicKey=$ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
 
-branding:
+branding: 
   icon: "share-2"
   color: "black"
