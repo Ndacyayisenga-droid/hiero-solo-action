@@ -136,7 +136,8 @@ runs:
         kubectl get configmap -n $SOLO_CLUSTER_SETUP_NAMESPACE
 
         # Create deployment
-        solo deployment create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --quiet-mode
+        solo deployment create --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE --quiet-mode --cluster-ref $SOLO_CLUSTER_NAME > deployment_create_output.txt 2>&1
+        cat deployment_create_output.txt
 
         # Generate node keys
         solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT -n $SOLO_NAMESPACE > node_keys_output.txt 2>&1
