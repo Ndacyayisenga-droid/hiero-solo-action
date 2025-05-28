@@ -112,11 +112,11 @@ runs:
         # Initialize solo
         solo init
 
-        # Generate node keys
-        solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
-
         # Create deployment
         solo deployment create --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE --quiet-mode
+
+        # Generate node keys
+        solo node keys --gossip-keys --tls-keys --node-aliases node1 --deployment $SOLO_DEPLOYMENT --namespace $SOLO_NAMESPACE
 
         # Setup cluster
         solo cluster setup --namespace $SOLO_CLUSTER_SETUP_NAMESPACE
