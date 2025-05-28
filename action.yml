@@ -117,7 +117,8 @@ runs:
         solo init
 
         # Setup cluster
-        solo cluster-ref setup --namespace $SOLO_CLUSTER_SETUP_NAMESPACE
+        echo "Running solo cluster-ref setup..."
+        solo cluster-ref setup -s $SOLO_CLUSTER_SETUP_NAMESPACE
 
         # Debug: Check for solo-remote-config ConfigMap
         echo "Checking for solo-remote-config ConfigMap in namespace $SOLO_NAMESPACE:"
@@ -253,6 +254,6 @@ runs:
         echo "publicKey=$ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
 
-branding: 
+branding:
   icon: "share-2"
   color: "black"
