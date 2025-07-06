@@ -49,7 +49,7 @@ jobs:
         uses: ./
         with:
           installMirrorNode: true
-          mirrorNodeVersion: "v0.133.0"
+          mirrorNodeVersion: "v0.129.1"
         id: solo
 
       - name: ✅ Validate Mirror Node API
