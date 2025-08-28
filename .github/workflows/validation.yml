@@ -187,8 +187,10 @@ jobs:
       - name: ✅ Validate gRPC Connections
         env:
           INSTALL_MIRROR_NODE: false
-        run: ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
-
+        run: |
+          chmod +x ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
+          bash ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
+  
   validate-grpc-connections-with-mirror:
     runs-on: ubuntu-latest
     steps:
@@ -210,4 +212,6 @@ jobs:
       - name: ✅ Validate gRPC Connections with Mirror Node
         env:
           INSTALL_MIRROR_NODE: true
-        run: ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
+        run: |
+          chmod +x ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
+          bash ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
