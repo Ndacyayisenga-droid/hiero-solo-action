@@ -43,6 +43,7 @@ test_grpc_connection() {
     # Check if grpcurl is available
     if command -v grpcurl >/dev/null 2>&1; then
         echo "Testing gRPC connection to $service_name on port $port..."
+        echo "grpcurl version: $(grpcurl --version)"
         
         # Try to list services (this is a common gRPC reflection endpoint)
         if timeout 10 grpcurl -plaintext localhost:$port list >/dev/null 2>&1; then
@@ -52,10 +53,20 @@ test_grpc_connection() {
             return 0
         else
             echo "⚠️  gRPC reflection not available, but port is listening"
+            echo "Attempting to test with a simple gRPC call..."
+            # Try a simple health check or ping
+            if timeout 10 grpcurl -plaintext localhost:$port describe >/dev/null 2>&1; then
+                echo "✅ gRPC endpoint responds to describe command"
+            else
+                echo "ℹ️  gRPC endpoint is listening but doesn't support reflection"
+            fi
             return 0
         fi
     else
-        echo "ℹ️  grpcurl not available, skipping gRPC protocol test"
+        echo "❌ grpcurl not available - checking installation..."
+        echo "PATH: $PATH"
+        echo "which grpcurl: $(which grpcurl 2>/dev/null || echo 'not found')"
+        echo "ls /usr/local/bin/grpcurl: $(ls -la /usr/local/bin/grpcurl 2>/dev/null || echo 'not found')"
         return 0
     fi
 }
