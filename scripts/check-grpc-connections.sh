@@ -45,21 +45,20 @@ test_grpc_connection() {
         echo "Testing gRPC connection to $service_name on port $port..."
         echo "grpcurl version: $(grpcurl --version)"
         
-        # Try to list services (this is a common gRPC reflection endpoint)
-        if timeout 10 grpcurl -plaintext localhost:$port list >/dev/null 2>&1; then
-            echo "✅ gRPC connection to $service_name successful"
-            echo "Available services:"
-            timeout 10 grpcurl -plaintext localhost:$port list
-            return 0
-        else
-            echo "⚠️  gRPC reflection not available, but port is listening"
-            echo "Attempting to test with a simple gRPC call..."
-            # Try a simple health check or ping
-            if timeout 10 grpcurl -plaintext localhost:$port describe >/dev/null 2>&1; then
-                echo "✅ gRPC endpoint responds to describe command"
+        # Only test gRPC reflection for Mirror Node gRPC (port 5600) which supports it
+        if [ "$port" = "5600" ]; then
+            # Try to list services (this is a common gRPC reflection endpoint)
+            if timeout 10 grpcurl -plaintext localhost:$port list >/dev/null 2>&1; then
+                echo "✅ gRPC connection to $service_name successful"
+                echo "Available services:"
+                timeout 10 grpcurl -plaintext localhost:$port list
+                return 0
             else
-                echo "ℹ️  gRPC endpoint is listening but doesn't support reflection"
+                echo "⚠️  gRPC reflection not available, but port is listening"
+                return 0
             fi
+        else
+            # For other ports (9998, 50211), just confirm the port is listening
             return 0
         fi
     else
