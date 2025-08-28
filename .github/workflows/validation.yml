@@ -32,7 +32,9 @@ jobs:
           ED25519_ACCOUNT_ID: ${{ steps.solo.outputs.ed25519AccountId }}
           ED25519_PRIVATE_KEY: ${{ steps.solo.outputs.ed25519PrivateKey }}
           ED25519_PUBLIC_KEY: ${{ steps.solo.outputs.ed25519PublicKey }}
-        run: ${GITHUB_WORKSPACE}/scripts/check-accounts.sh
+        run: |
+          chmod +x ${GITHUB_WORKSPACE}/scripts/check-accounts.sh
+          bash ${GITHUB_WORKSPACE}/scripts/check-accounts.sh
 
   validate-hbar-amount:
     runs-on: ubuntu-latest
@@ -131,7 +133,8 @@ jobs:
           ED25519_PRIVATE_KEY: ${{ steps.solo.outputs.ed25519PrivateKey }}
           ED25519_PUBLIC_KEY: ${{ steps.solo.outputs.ed25519PublicKey }}
         run: |
-          ${GITHUB_WORKSPACE}/scripts/check-accounts.sh
+          chmod +x ${GITHUB_WORKSPACE}/scripts/check-accounts.sh
+          bash ${GITHUB_WORKSPACE}/scripts/check-accounts.sh
 
           # Log Account details for Generic (ED25519), ECDSA, and ED25519
           echo "Generic Account ID (ED25519): ${{ steps.solo.outputs.accountId }}"
@@ -184,13 +187,20 @@ jobs:
         id: solo
         uses: ./
 
+      - name: Install grpcurl
+        run: |
+          curl -sSL https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin grpcurl
+          sudo chmod +x /usr/local/bin/grpcurl
+          echo "grpcurl installed at: $(which grpcurl)"
+          echo "grpcurl version: $(grpcurl --version)"
+
       - name: ✅ Validate gRPC Connections
         env:
           INSTALL_MIRROR_NODE: false
         run: |
           chmod +x ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
           bash ${GITHUB_WORKSPACE}/scripts/check-grpc-connections.sh
-  
+
   validate-grpc-connections-with-mirror:
     runs-on: ubuntu-latest
     steps:
@@ -208,6 +218,13 @@ jobs:
         with:
           installMirrorNode: true
           mirrorNodeVersion: "v0.132.0"
+
+      - name: Install grpcurl
+        run: |
+          curl -sSL https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin grpcurl
+          sudo chmod +x /usr/local/bin/grpcurl
+          echo "grpcurl installed at: $(which grpcurl)"
+          echo "grpcurl version: $(grpcurl --version)"
 
       - name: ✅ Validate gRPC Connections with Mirror Node
         env:
