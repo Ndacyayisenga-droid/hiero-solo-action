@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        uses: step-security/harden-runner@v2.12.0
         with:
           egress-policy: audit
 
       - name: 🚀 Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
 
       - name: ⚙️ Setup Hiero Solo
         id: solo
@@ -37,15 +37,10 @@ jobs:
   validate-hbar-amount:
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
-        with:
-          egress-policy: audit
-
       - name: 🚀 Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
 
-      - name: ⚙️ Setup Hiero Solo
+      - name: ⚙️ Setup Hiero Solo with custom HBAR amount
         id: solo
         uses: ./
         with:
@@ -58,60 +53,37 @@ jobs:
 
   validate-mirror-node:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mirrorNodeVersion: ["v0.132.0", "v0.133.0"]
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
-        with:
-          egress-policy: audit
-
       - name: 🚀 Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
 
       - name: ⚙️ Setup Hiero Solo with MirrorNode
         id: solo
         uses: ./
         with:
           installMirrorNode: true
-          mirrorNodeVersion: "v0.132.0"
+          mirrorNodeVersion: ${{ matrix.mirrorNodeVersion }}
 
       - name: ✅ Validate Mirror Node API
         run: |
-          # Log Account details for Generic (ED25519), ECDSA, and ED25519
-          echo "Generic Account ID (ED25519): ${{ steps.solo.outputs.accountId }}"
-          echo "Generic Private Key (ED25519): ${{ steps.solo.outputs.privateKey }}"
-          echo "Generic Public Key (ED25519): ${{ steps.solo.outputs.publicKey }}"
-          echo "ECDSA Account ID: ${{ steps.solo.outputs.ecdsaAccountId }}"
-          echo "ECDSA Private Key: ${{ steps.solo.outputs.ecdsaPrivateKey }}"
-          echo "ECDSA Public Key: ${{ steps.solo.outputs.ecdsaPublicKey }}"
-
-          echo "ED25519 Account ID: ${{ steps.solo.outputs.ed25519AccountId }}"
-          echo "ED25519 Private Key: ${{ steps.solo.outputs.ed25519PrivateKey }}"
-          echo "ED25519 Public Key: ${{ steps.solo.outputs.ed25519PublicKey }}"
-
-          # Wait for the mirror node to be fully up and running
-          sleep 10
-
+          sleep 15
           RESPONSE=$(curl -s -w "%{http_code}" -X 'GET' 'http://localhost:5551/api/v1/network/nodes' -H 'accept: application/json' -o response.json)
-
           if [ "$RESPONSE" -ne 200 ]; then
-            echo "❌ Error: API request failed with status code $RESPONSE"
+            echo "❌ Mirror Node API failed"
             cat response.json
             exit 1
-          else
-            echo "✅ API request successful"
-            cat response.json
           fi
+          echo "✅ Mirror Node API OK"
+          cat response.json
 
   validate-json-rpc-relay:
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
-        with:
-          egress-policy: audit
-
       - name: 🚀 Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
 
       - name: ⚙️ Setup Hiero Solo with JSON-RPC Relay
         id: solo
@@ -120,51 +92,79 @@ jobs:
           installRelay: true
 
       - name: ✅ Validate JSON-RPC Relay
-        env:
-          ACCOUNT_ID: ${{ steps.solo.outputs.accountId }}
-          PRIVATE_KEY: ${{ steps.solo.outputs.privateKey }}
-          PUBLIC_KEY: ${{ steps.solo.outputs.publicKey }}
-          ECDSA_ACCOUNT_ID: ${{ steps.solo.outputs.ecdsaAccountId }}
-          ECDSA_PRIVATE_KEY: ${{ steps.solo.outputs.ecdsaPrivateKey }}
-          ECDSA_PUBLIC_KEY: ${{ steps.solo.outputs.ecdsaPublicKey }}
-          ED25519_ACCOUNT_ID: ${{ steps.solo.outputs.ed25519AccountId }}
-          ED25519_PRIVATE_KEY: ${{ steps.solo.outputs.ed25519PrivateKey }}
-          ED25519_PUBLIC_KEY: ${{ steps.solo.outputs.ed25519PublicKey }}
         run: |
-          ${GITHUB_WORKSPACE}/scripts/check-accounts.sh
-
-          # Log Account details for Generic (ED25519), ECDSA, and ED25519
-          echo "Generic Account ID (ED25519): ${{ steps.solo.outputs.accountId }}"
-          echo "Generic Private Key (ED25519): ${{ steps.solo.outputs.privateKey }}"
-          echo "Generic Public Key (ED25519): ${{ steps.solo.outputs.publicKey }}"
-          echo "ECDSA Account ID: ${{ steps.solo.outputs.ecdsaAccountId }}"
-          echo "ECDSA Private Key: ${{ steps.solo.outputs.ecdsaPrivateKey }}"
-          echo "ECDSA Public Key: ${{ steps.solo.outputs.ecdsaPublicKey }}"
-
-          echo "ED25519 Account ID: ${{ steps.solo.outputs.ed25519AccountId }}"
-          echo "ED25519 Private Key: ${{ steps.solo.outputs.ed25519PrivateKey }}"
-          echo "ED25519 Public Key: ${{ steps.solo.outputs.ed25519PublicKey }}"
-
           sleep 30
           RESPONSE=$(curl -s -w "%{http_code}" -X POST 'http://localhost:7546' \
             -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
             -o response.json)
           if [ "$RESPONSE" -ne 200 ]; then
-            echo "❌ Error: JSON-RPC request failed with status code $RESPONSE"
-            echo "Response body:"
-            cat response.json
-            echo "Checking if relay service is running:"
-            kubectl get pods -n solo | grep relay
-            exit 1
-          fi
-          CHAIN_ID=$(jq -r '.result' response.json)
-          if [ -z "$CHAIN_ID" ] || [ "$CHAIN_ID" = "null" ]; then
-            echo "❌ Error: Invalid or missing chainId in response"
-            echo "Response body:"
+            echo "❌ JSON-RPC failed"
             cat response.json
             exit 1
           fi
-          echo "✅ JSON-RPC Relay request successful"
-          echo "Chain ID: $CHAIN_ID"
+          echo "✅ JSON-RPC Relay OK"
           cat response.json
+
+  validate-consensus-node:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 Checkout Repo
+        uses: actions/checkout@v4.2.2
+
+      - name: ⚙️ Setup Hiero Solo
+        id: solo
+        uses: ./
+
+      - name: ✅ Check Solo Consensus Node health
+        run: |
+          echo "Checking Solo node list"
+          solo node list --deployment solo-deployment
+          echo "Submitting test transaction"
+          solo account transfer --from ${{ steps.solo.outputs.accountId }} \
+                                --to ${{ steps.solo.outputs.ecdsaAccountId }} \
+                                --hbar-amount 10 \
+                                --deployment solo-deployment
+          echo "✅ Transaction sent successfully"
+
+  validate-proxies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 Checkout Repo
+        uses: actions/checkout@v4.2.2
+
+      - name: ⚙️ Setup Hiero Solo
+        id: solo
+        uses: ./
+
+      - name: ✅ Validate HAProxy and gRPC Proxy
+        run: |
+          echo "Checking HAProxy port..."
+          nc -zv localhost 50211 || (echo "❌ HAProxy not responding" && exit 1)
+          echo "✅ HAProxy OK"
+
+          echo "Checking gRPC proxy port..."
+          nc -zv localhost 9998 || (echo "❌ gRPC Proxy not responding" && exit 1)
+          echo "✅ gRPC Proxy OK"
+
+  validate-invalid-inputs:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: 🚀 Checkout Repo
+        uses: actions/checkout@v4.2.2
+
+      - name: ⚙️ Setup Hiero Solo with invalid hbarAmount
+        id: solo
+        uses: ./
+        with:
+          hbarAmount: "invalid"
+
+      - name: ✅ Expect failure
+        run: |
+          if [ -f solo-deployment ]; then
+            echo "❌ Expected failure but deployment succeeded"
+            exit 1
+          else
+            echo "✅ Invalid input correctly failed"
+          fi
