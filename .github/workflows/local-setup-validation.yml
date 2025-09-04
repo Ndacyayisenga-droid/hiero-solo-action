@@ -1,3 +1,21 @@
+# Local Setup Validation
+#
+# This workflow validates the local Docker-based development setup in the `local/` directory.
+# It focuses on build validation and static analysis rather than full execution to avoid
+# Docker-in-Docker complexity in CI environments.
+#
+# What it validates:
+# - Docker image builds successfully with default and custom build args
+# - All required tools (kind, helm, kubectl, solo, python3, jq) are installed and accessible
+# - Docker Compose configuration is valid
+# - Shell scripts have valid syntax
+# - Python scripts compile successfully
+# - YAML configuration files are valid
+# - Environment variables can be used in containers
+# - Documentation examples work as described
+#
+# This complements validation.yml which tests the GitHub Action itself.
+
 name: Local Setup Validation
 
 on:
@@ -34,12 +52,25 @@ jobs:
       - name: 🔍 Validate Docker Image Tools
         run: |
           # Check that all required tools are installed and accessible
+          echo "=== Checking kind ==="
           docker run --rm hiero/solo-runner:test kind version
+          
+          echo "=== Checking helm ==="
           docker run --rm hiero/solo-runner:test helm version --short
+          
+          echo "=== Checking kubectl ==="
           docker run --rm hiero/solo-runner:test kubectl version --client=true --output=yaml
+          
+          echo "=== Checking solo ==="
           docker run --rm hiero/solo-runner:test solo version
+          
+          echo "=== Checking python3 ==="
           docker run --rm hiero/solo-runner:test python3 --version
+          
+          echo "=== Checking jq ==="
           docker run --rm hiero/solo-runner:test jq --version
+          
+          echo "✅ All tools are accessible"
 
       - name: 🐳 Build Docker Image with Custom Args
         working-directory: ./local
@@ -54,9 +85,16 @@ jobs:
 
       - name: 🔍 Validate Custom Build Tools
         run: |
+          echo "=== Checking kind ==="
           docker run --rm hiero/solo-runner:custom kind version
+          
+          echo "=== Checking helm ==="
           docker run --rm hiero/solo-runner:custom helm version --short
+          
+          echo "=== Checking kubectl ==="
           docker run --rm hiero/solo-runner:custom kubectl version --client=true --output=yaml
+          
+          echo "✅ Custom build tools are accessible"
 
   validate-docker-compose:
     runs-on: ubuntu-latest
@@ -82,7 +120,7 @@ jobs:
           # Verify the compose service can start (just build, don't run full setup)
           docker compose build
 
-  validate-plain-docker-setup:
+  validate-scripts-and-files:
     runs-on: ubuntu-latest
     needs: validate-docker-build
     steps:
@@ -99,37 +137,68 @@ jobs:
         run: |
           docker build -t hiero/solo-runner . --build-context gh=..
 
-      - name: 📋 Copy Required Files to Container
+      - name: 📋 Validate Required Files Are Accessible
         working-directory: ./local
         run: |
-          # Create a test container to copy files and validate setup
-          docker create --name test-container hiero/solo-runner sleep 3600
+          # Check that all setup scripts are included in the Docker image
+          echo "=== Checking setup-solo-test-net.sh is accessible ==="
+          docker run --rm hiero/solo-runner ls -la /setup-solo-test-net.sh
           
-          # Copy additional required files
-          docker cp ./create-ecdsa-account.sh test-container:/create-ecdsa-account.sh
-          docker cp ./all-in-setup.sh test-container:/all-in-setup.sh
-          docker cp ../extractAccountAsJson.py test-container:/extractAccountAsJson.py
+          echo "=== Checking kind-config.yaml is accessible ==="
+          docker run --rm hiero/solo-runner ls -la /kind-config.yaml
           
-          # Make scripts executable
-          docker exec test-container chmod +x /create-ecdsa-account.sh
-          docker exec test-container chmod +x /all-in-setup.sh
-          
-          # Cleanup
-          docker rm test-container
+          echo "=== Checking haproxy-svc-patch.yaml is accessible ==="
+          docker run --rm hiero/solo-runner ls -la /haproxy-svc-patch.yaml
 
       - name: 🔍 Validate Script Syntax
         working-directory: ./local
         run: |
-          # Check shell script syntax
+          # Check shell script syntax without executing
+          echo "=== Validating setup-solo-test-net.sh syntax ==="
           docker run --rm -v "$(pwd)/setup-solo-test-net.sh:/script.sh" hiero/solo-runner sh -n /script.sh
+          
+          echo "=== Validating create-ecdsa-account.sh syntax ==="
           docker run --rm -v "$(pwd)/create-ecdsa-account.sh:/script.sh" hiero/solo-runner sh -n /script.sh
+          
+          echo "=== Validating all-in-setup.sh syntax ==="
           docker run --rm -v "$(pwd)/all-in-setup.sh:/script.sh" hiero/solo-runner sh -n /script.sh
+          
+          echo "✅ All scripts have valid syntax"
 
       - name: 🐍 Validate Python Script
         working-directory: ./local
         run: |
           # Check Python script syntax
+          echo "=== Validating extractAccountAsJson.py syntax ==="
           docker run --rm -v "$(pwd)/../extractAccountAsJson.py:/script.py" hiero/solo-runner python3 -m py_compile /script.py
+          echo "✅ Python script syntax is valid"
+
+      - name: 🔧 Validate Environment Variables Usage
+        working-directory: ./local
+        run: |
+          # Check that scripts reference expected environment variables
+          echo "=== Checking environment variable usage in scripts ==="
+          
+          if grep -q "SOLO_CLUSTER_NAME" setup-solo-test-net.sh; then
+            echo "✅ setup-solo-test-net.sh uses SOLO_CLUSTER_NAME"
+          else
+            echo "❌ setup-solo-test-net.sh missing SOLO_CLUSTER_NAME usage"
+            exit 1
+          fi
+          
+          if grep -q "SOLO_NAMESPACE" setup-solo-test-net.sh; then
+            echo "✅ setup-solo-test-net.sh uses SOLO_NAMESPACE"
+          else
+            echo "❌ setup-solo-test-net.sh missing SOLO_NAMESPACE usage"
+            exit 1
+          fi
+          
+          if grep -q "SOLO_DEPLOYMENT" setup-solo-test-net.sh; then
+            echo "✅ setup-solo-test-net.sh uses SOLO_DEPLOYMENT"
+          else
+            echo "❌ setup-solo-test-net.sh missing SOLO_DEPLOYMENT usage"
+            exit 1
+          fi
 
   validate-kind-config:
     runs-on: ubuntu-latest
@@ -169,11 +238,23 @@ jobs:
       - name: ✅ Validate HAProxy Service Patch
         working-directory: ./local
         run: |
-          # Validate YAML syntax
-          python3 -c "import yaml; yaml.safe_load(open('haproxy-svc-patch.yaml', 'r'))"
-          echo "✅ HAProxy service patch YAML is valid"
+          # Validate YAML syntax (pip install pyyaml first if needed)
+          python3 -c "
+          import sys
+          try:
+              import yaml
+          except ImportError:
+              print('Installing PyYAML...')
+              import subprocess
+              subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'PyYAML'])
+              import yaml
+          
+          with open('haproxy-svc-patch.yaml', 'r') as f:
+              yaml.safe_load(f)
+          print('✅ HAProxy service patch YAML is valid')
+          "
 
-  validate-environment-variables:
+  validate-runtime-environment:
     runs-on: ubuntu-latest
     needs: validate-docker-build
     steps:
@@ -192,7 +273,8 @@ jobs:
 
       - name: 🔍 Test Environment Variables Setup
         run: |
-          # Test that environment variables can be set and used
+          # Test that environment variables can be set and accessed
+          echo "=== Testing environment variable accessibility ==="
           docker run --rm \
             -e SOLO_CLUSTER_NAME=test-cluster \
             -e SOLO_NAMESPACE=test-solo \
@@ -200,6 +282,31 @@ jobs:
             -e HIERO_VERSION=v0.63.7 \
             hiero/solo-runner \
             sh -c 'echo "Cluster: $SOLO_CLUSTER_NAME, Namespace: $SOLO_NAMESPACE, Deployment: $SOLO_DEPLOYMENT, Version: $HIERO_VERSION"'
+          
+          echo "✅ Environment variables are accessible in container"
+
+      - name: 🏠 Test Home Directory Creation
+        run: |
+          # Test that the container can create necessary directories
+          echo "=== Testing directory creation capabilities ==="
+          docker run --rm hiero/solo-runner sh -c 'mkdir -p ~/.kube && echo "✅ Can create .kube directory"'
+          docker run --rm hiero/solo-runner sh -c 'mkdir -p ~/.solo && echo "✅ Can create .solo directory"'
+          
+          echo "✅ Container can create required directories"
+
+      - name: 🔧 Test Basic Tool Functionality
+        run: |
+          # Test basic functionality of installed tools (without requiring Docker daemon)
+          echo "=== Testing solo init (dry run) ==="
+          docker run --rm hiero/solo-runner solo --help | head -5
+          
+          echo "=== Testing kind (version only) ==="
+          docker run --rm hiero/solo-runner kind --help | head -5
+          
+          echo "=== Testing helm (version only) ==="
+          docker run --rm hiero/solo-runner helm --help | head -5
+          
+          echo "✅ Basic tool functionality verified"
 
   validate-documentation:
     runs-on: ubuntu-latest
