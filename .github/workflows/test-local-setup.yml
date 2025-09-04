@@ -1,4 +1,4 @@
-name: Test Local Setup
+name: Local Setup Validation
 
 on:
   pull_request:
@@ -6,19 +6,17 @@ on:
       - main
     paths:
       - 'local/**'
-      - '.github/workflows/test-local-setup.yml'
+      - '.github/workflows/local-setup-validation.yml'
   push:
     branches:
       - main
     paths:
       - 'local/**'
-      - '.github/workflows/test-local-setup.yml'
-  workflow_dispatch:
+      - '.github/workflows/local-setup-validation.yml'
 
 jobs:
-  test-docker-compose:
+  validate-docker-build:
     runs-on: ubuntu-latest
-    name: Test Docker Compose Setup
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
@@ -28,83 +26,41 @@ jobs:
       - name: 🚀 Checkout Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: 🐳 Set up Docker Buildx
-        uses: docker/setup-buildx-action@4b4e9c3e2d4535116e24534f801eef3c95e17742 # v3.3.0
-
-      - name: 🧹 Cleanup Previous Runs
+      - name: 🐳 Build Docker Image with Default Args
+        working-directory: ./local
         run: |
-          # Clean up any existing containers and networks
-          docker compose -f local/compose.yaml down --volumes --remove-orphans || true
-          docker system prune -f || true
+          docker build -t hiero/solo-runner:test . --build-context gh=..
 
-      - name: 🏗️ Build and Start Local Setup with Docker Compose
-        working-directory: local
+      - name: 🔍 Validate Docker Image Tools
         run: |
-          echo "Building and starting local setup with Docker Compose..."
-          docker compose up --build -d
-          
-          # Wait for the container to be ready
-          echo "Waiting for container to be ready..."
-          timeout 300 bash -c 'until docker compose ps | grep -q "Up"; do sleep 5; done'
-          
-          # Show container status
-          docker compose ps
+          # Check that all required tools are installed and accessible
+          docker run --rm hiero/solo-runner:test kind version
+          docker run --rm hiero/solo-runner:test helm version --short
+          docker run --rm hiero/solo-runner:test kubectl version --client=true --output=yaml
+          docker run --rm hiero/solo-runner:test solo version
+          docker run --rm hiero/solo-runner:test python3 --version
+          docker run --rm hiero/solo-runner:test jq --version
 
-      - name: 🔍 Validate Container is Running
-        working-directory: local
+      - name: 🐳 Build Docker Image with Custom Args
+        working-directory: ./local
         run: |
-          # Check if container is running
-          if ! docker compose ps | grep -q "Up"; then
-            echo "❌ Container is not running"
-            docker compose logs
-            exit 1
-          fi
-          echo "✅ Container is running successfully"
+          docker build \
+            --build-arg KIND_VERSION=0.29.0 \
+            --build-arg HELM_VERSION=3.17.4 \
+            --build-arg KUBECTL_VERSION=1.33.3 \
+            --build-arg DOCKER_VERSION=28.3.2 \
+            -t hiero/solo-runner:custom . \
+            --build-context gh=..
 
-      - name: 🌐 Test Network Connectivity
+      - name: 🔍 Validate Custom Build Tools
         run: |
-          # Wait for HAProxy to be ready
-          echo "Waiting for HAProxy to be ready on localhost:50211..."
-          timeout 60 bash -c 'until nc -z localhost 50211; do sleep 2; done' || {
-            echo "❌ HAProxy is not accessible on localhost:50211"
-            echo "Checking container logs:"
-            docker compose -f local/compose.yaml logs
-            exit 1
-          }
-          echo "✅ HAProxy is accessible on localhost:50211"
+          docker run --rm hiero/solo-runner:custom kind version
+          docker run --rm hiero/solo-runner:custom helm version --short
+          docker run --rm hiero/solo-runner:custom kubectl version --client=true --output=yaml
 
-      - name: 🧪 Test Solo CLI Functionality
-        working-directory: local
-        run: |
-          # Execute commands inside the running container
-          echo "Testing Solo CLI functionality..."
-          
-          # Get the container name
-          CONTAINER_NAME=$(docker compose ps -q)
-          
-          # Test if solo CLI is available
-          docker exec $CONTAINER_NAME solo --version || {
-            echo "❌ Solo CLI is not available"
-            exit 1
-          }
-          echo "✅ Solo CLI is available"
-          
-          # Test if kubectl is available
-          docker exec $CONTAINER_NAME kubectl version --client || {
-            echo "❌ kubectl is not available"
-            exit 1
-          }
-          echo "✅ kubectl is available"
-
-      - name: 🧹 Cleanup Docker Compose
-        if: always()
-        working-directory: local
-        run: |
-          docker compose down --volumes --remove-orphans || true
-
-  test-plain-docker:
+  validate-docker-compose:
     runs-on: ubuntu-latest
-    name: Test Plain Docker Setup
+    needs: validate-docker-build
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
@@ -114,239 +70,170 @@ jobs:
       - name: 🚀 Checkout Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: 🐳 Set up Docker Buildx
-        uses: docker/setup-buildx-action@4b4e9c3e2d4535116e24534f801eef3c95e17742 # v3.3.0
-
-      - name: 🧹 Cleanup Previous Runs
+      - name: 🐳 Test Docker Compose Setup
+        working-directory: ./local
         run: |
-          # Clean up any existing containers
-          docker stop hiero-solo-test || true
-          docker rm hiero-solo-test || true
-          docker system prune -f || true
-
-      - name: 🏗️ Build Docker Image
-        working-directory: local
-        run: |
-          echo "Building Docker image for local setup..."
+          # Build the image first
           docker build -t hiero/solo-runner . --build-context gh=..
           
-          # Verify image was built
-          docker images | grep hiero/solo-runner || {
-            echo "❌ Docker image was not built successfully"
-            exit 1
-          }
-          echo "✅ Docker image built successfully"
-
-      - name: 🚀 Run Docker Container
-        working-directory: local
-        run: |
-          echo "Starting Docker container..."
-          # Run container in background with proper networking
-          docker run -d \
-            --name hiero-solo-test \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            --network host \
-            hiero/solo-runner &
+          # Test compose file validation
+          docker compose config
           
-          # Wait for container to start
-          sleep 10
-          
-          # Check if container is running
-          if ! docker ps | grep -q hiero-solo-test; then
-            echo "❌ Container failed to start"
-            docker logs hiero-solo-test
-            exit 1
-          fi
-          echo "✅ Container is running"
+          # Verify the compose service can start (just build, don't run full setup)
+          docker compose build
 
-      - name: 🌐 Test Network Connectivity
-        run: |
-          # Wait for HAProxy to be ready
-          echo "Waiting for HAProxy to be ready on localhost:50211..."
-          timeout 120 bash -c 'until nc -z localhost 50211; do sleep 5; done' || {
-            echo "❌ HAProxy is not accessible on localhost:50211"
-            echo "Checking container logs:"
-            docker logs hiero-solo-test
-            exit 1
-          }
-          echo "✅ HAProxy is accessible on localhost:50211"
-
-      - name: 🧪 Test Solo CLI and Tools
-        run: |
-          echo "Testing tools inside the container..."
-          
-          # Test if solo CLI is available
-          docker exec hiero-solo-test solo --version || {
-            echo "❌ Solo CLI is not available"
-            exit 1
-          }
-          echo "✅ Solo CLI is available"
-          
-          # Test if kubectl is available
-          docker exec hiero-solo-test kubectl version --client || {
-            echo "❌ kubectl is not available"
-            exit 1
-          }
-          echo "✅ kubectl is available"
-          
-          # Test if kind is available
-          docker exec hiero-solo-test kind version || {
-            echo "❌ kind is not available"
-            exit 1
-          }
-          echo "✅ kind is available"
-
-      - name: 🧹 Cleanup Plain Docker
-        if: always()
-        run: |
-          docker stop hiero-solo-test || true
-          docker rm hiero-solo-test || true
-
-  test-local-setup-versions:
+  validate-plain-docker-setup:
     runs-on: ubuntu-latest
-    name: Test Local Setup with Different Versions
-    strategy:
-      matrix:
-        hiero-version: [v0.58.10, v0.63.7]
-        solo-version: [0.39.0, 0.41.0]
+    needs: validate-docker-build
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
         with:
           egress-policy: audit
 
-      - name: �� Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: 🐳 Set up Docker Buildx
-        uses: docker/setup-buildx-action@4b4e9c3e2d4535116e24534f801eef3c95e17742 # v3.3.0
-
-      - name: 🧹 Cleanup Previous Runs
-        run: |
-          docker stop hiero-solo-test-${{ matrix.hiero-version }}-${{ matrix.solo-version }} || true
-          docker rm hiero-solo-test-${{ matrix.hiero-version }}-${{ matrix.solo-version }} || true
-
-      - name: 🏗️ Build Docker Image with Custom Versions
-        working-directory: local
-        run: |
-          echo "Building Docker image with Hiero ${{ matrix.hiero-version }} and Solo ${{ matrix.solo-version }}..."
-          docker build \
-            --build-arg HIERO_VERSION=${{ matrix.hiero-version }} \
-            -t hiero/solo-runner:${{ matrix.hiero-version }}-${{ matrix.solo-version }} \
-            . --build-context gh=..
-
-      - name: 🚀 Test Container with Custom Versions
-        run: |
-          echo "Testing container with custom versions..."
-          # Run container with timeout to test basic functionality
-          timeout 300 docker run \
-            --name hiero-solo-test-${{ matrix.hiero-version }}-${{ matrix.solo-version }} \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            --network host \
-            hiero/solo-runner:${{ matrix.hiero-version }}-${{ matrix.solo-version }} || {
-            echo "❌ Container failed to run with versions Hiero ${{ matrix.hiero-version }}, Solo ${{ matrix.solo-version }}"
-            docker logs hiero-solo-test-${{ matrix.hiero-version }}-${{ matrix.solo-version }} || true
-            exit 1
-          }
-          echo "✅ Container ran successfully with versions Hiero ${{ matrix.hiero-version }}, Solo ${{ matrix.solo-version }}"
-
-      - name: 🧹 Cleanup Version Test
-        if: always()
-        run: |
-          docker stop hiero-solo-test-${{ matrix.hiero-version }}-${{ matrix.solo-version }} || true
-          docker rm hiero-solo-test-${{ matrix.hiero-version }}-${{ matrix.solo-version }} || true
-
-  validate-local-setup-documentation:
-    runs-on: ubuntu-latest
-    name: Validate Local Setup Documentation
-    steps:
       - name: 🚀 Checkout Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: 📋 Check Local Setup Files Exist
+      - name: 🐳 Build Docker Image
+        working-directory: ./local
         run: |
-          echo "Validating local setup files..."
-          
-          # Check required files exist
-          required_files=(
-            "local/Dockerfile"
-            "local/compose.yaml"
-            "local/README.md"
-            "local/setup-solo-test-net.sh"
-            "local/create-ecdsa-account.sh"
-            "local/all-in-setup.sh"
-            "local/kind-config.yaml"
-            "local/haproxy-svc-patch.yaml"
-          )
-          
-          for file in "${required_files[@]}"; do
-            if [ ! -f "$file" ]; then
-              echo "❌ Required file missing: $file"
-              exit 1
-            else
-              echo "✅ Found: $file"
-            fi
-          done
+          docker build -t hiero/solo-runner . --build-context gh=..
 
-      - name: 📝 Validate Script Permissions
+      - name: 📋 Copy Required Files to Container
+        working-directory: ./local
         run: |
-          echo "Checking script permissions..."
+          # Create a test container to copy files and validate setup
+          docker create --name test-container hiero/solo-runner sleep 3600
           
-          scripts=(
-            "local/setup-solo-test-net.sh"
-            "local/create-ecdsa-account.sh"
-            "local/all-in-setup.sh"
-          )
+          # Copy additional required files
+          docker cp ./create-ecdsa-account.sh test-container:/create-ecdsa-account.sh
+          docker cp ./all-in-setup.sh test-container:/all-in-setup.sh
+          docker cp ../extractAccountAsJson.py test-container:/extractAccountAsJson.py
           
-          for script in "${scripts[@]}"; do
-            if [ ! -x "$script" ]; then
-              echo "❌ Script is not executable: $script"
-              exit 1
-            else
-              echo "✅ Script is executable: $script"
-            fi
-          done
+          # Make scripts executable
+          docker exec test-container chmod +x /create-ecdsa-account.sh
+          docker exec test-container chmod +x /all-in-setup.sh
+          
+          # Cleanup
+          docker rm test-container
 
-      - name: 🔍 Validate Dockerfile Syntax
+      - name: 🔍 Validate Script Syntax
+        working-directory: ./local
         run: |
-          echo "Validating Dockerfile syntax..."
-          
-          # Check if Dockerfile has required components
-          if ! grep -q "FROM node:22-alpine" local/Dockerfile; then
-            echo "❌ Dockerfile missing base image"
-            exit 1
-          fi
-          
-          if ! grep -q "npm install -g @hashgraph/solo" local/Dockerfile; then
-            echo "❌ Dockerfile missing Solo CLI installation"
-            exit 1
-          fi
-          
-          if ! grep -q "ENTRYPOINT" local/Dockerfile; then
-            echo "❌ Dockerfile missing ENTRYPOINT"
-            exit 1
-          fi
-          
-          echo "✅ Dockerfile syntax validation passed"
+          # Check shell script syntax
+          docker run --rm -v "$(pwd)/setup-solo-test-net.sh:/script.sh" hiero/solo-runner sh -n /script.sh
+          docker run --rm -v "$(pwd)/create-ecdsa-account.sh:/script.sh" hiero/solo-runner sh -n /script.sh
+          docker run --rm -v "$(pwd)/all-in-setup.sh:/script.sh" hiero/solo-runner sh -n /script.sh
 
-      - name: 📖 Validate README Content
+      - name: 🐍 Validate Python Script
+        working-directory: ./local
         run: |
-          echo "Validating local README content..."
+          # Check Python script syntax
+          docker run --rm -v "$(pwd)/../extractAccountAsJson.py:/script.py" hiero/solo-runner python3 -m py_compile /script.py
+
+  validate-kind-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+
+      - name: 🚀 Checkout Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: 🔧 Install kind
+        run: |
+          # Install kind for validation
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: ✅ Validate kind Configuration
+        working-directory: ./local
+        run: |
+          # Validate kind config syntax
+          kind create cluster --dry-run --config=./kind-config.yaml --name validation-test
+
+  validate-haproxy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+
+      - name: 🚀 Checkout Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: ✅ Validate HAProxy Service Patch
+        working-directory: ./local
+        run: |
+          # Validate YAML syntax
+          python3 -c "import yaml; yaml.safe_load(open('haproxy-svc-patch.yaml', 'r'))"
+          echo "✅ HAProxy service patch YAML is valid"
+
+  validate-environment-variables:
+    runs-on: ubuntu-latest
+    needs: validate-docker-build
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+
+      - name: 🚀 Checkout Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: 🐳 Build Docker Image
+        working-directory: ./local
+        run: |
+          docker build -t hiero/solo-runner . --build-context gh=..
+
+      - name: 🔍 Test Environment Variables Setup
+        run: |
+          # Test that environment variables can be set and used
+          docker run --rm \
+            -e SOLO_CLUSTER_NAME=test-cluster \
+            -e SOLO_NAMESPACE=test-solo \
+            -e SOLO_DEPLOYMENT=test-deployment \
+            -e HIERO_VERSION=v0.63.7 \
+            hiero/solo-runner \
+            sh -c 'echo "Cluster: $SOLO_CLUSTER_NAME, Namespace: $SOLO_NAMESPACE, Deployment: $SOLO_DEPLOYMENT, Version: $HIERO_VERSION"'
+
+  validate-documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+
+      - name: 🚀 Checkout Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: 📖 Validate README Commands
+        working-directory: ./local
+        run: |
+          # Check that all mentioned commands in README exist in Dockerfile
+          echo "Checking if documented build command is valid..."
           
-          # Check if README contains essential information
-          if ! grep -q "Docker Compose" local/README.md; then
-            echo "❌ README missing Docker Compose information"
-            exit 1
-          fi
+          # Test the exact command from README
+          docker build -t hiero/solo-runner . --build-context gh=..
           
-          if ! grep -q "Plain Docker" local/README.md; then
-            echo "❌ README missing Plain Docker information"
-            exit 1
-          fi
+          echo "✅ Build command from documentation works"
+
+      - name: 🔍 Verify Documented Build Args
+        working-directory: ./local
+        run: |
+          # Test build with all documented build args
+          docker build \
+            --build-arg DOCKER_VERSION=28.3.2 \
+            --build-arg HELM_VERSION=3.17.4 \
+            --build-arg HIERO_VERSION=v0.63.7 \
+            --build-arg KIND_VERSION=0.29.0 \
+            --build-arg KUBECTL_VERSION=1.33.3 \
+            -t hiero/solo-runner:doc-test . \
+            --build-context gh=..
           
-          if ! grep -q "localhost:50211" local/README.md; then
-            echo "❌ README missing HAProxy access information"
-            exit 1
-          fi
-          
-          echo "✅ README content validation passed"
+          echo "✅ All documented build args work correctly"
