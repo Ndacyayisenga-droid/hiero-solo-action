@@ -9,7 +9,7 @@ inputs:
   hieroVersion:
     description: "Version of Hiero consensus node to be used"
     required: false
-    default: "v0.62.0"
+    default: "v0.65.1"
   mirrorNodeVersion:
     description: "Version of the mirror node to be used"
     required: false
