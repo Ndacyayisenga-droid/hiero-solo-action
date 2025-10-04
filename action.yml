@@ -173,7 +173,7 @@ runs:
         }
 
         # Deploy network
-        solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT
+        solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION
 
         # Setup node
         solo consensus node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
