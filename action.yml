@@ -162,15 +162,11 @@ runs:
         # Generate node keys
         solo keys consensus generate -i node1 --deployment $SOLO_DEPLOYMENT --gossip-keys --tls-keys
 
-        # Setup the Solo cluster with MinIO operator (required for network deployment)
-        echo "Setting up cluster with required components..."
-        solo cluster-ref config setup --cluster-ref kind-$SOLO_CLUSTER_NAME --prometheus-stack false --grafana-agent false --minio true || {
-          echo "Cluster setup failed, trying to continue anyway..."
-          # Try to install just the MinIO operator if full setup fails
-          helm repo add minio https://operator.min.io/ || true
-          helm repo update || true
-          helm install minio-operator minio/operator --namespace minio-operator --create-namespace || echo "MinIO operator installation failed, continuing..."
-        }
+        # Install MinIO operator (required for network deployment)
+        echo "Installing MinIO operator..."
+        helm repo add minio https://operator.min.io/ || true
+        helm repo update || true
+        helm install minio-operator minio/operator --namespace minio-operator --create-namespace || echo "MinIO operator installation failed, continuing..."
 
         # Deploy network
         solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION
