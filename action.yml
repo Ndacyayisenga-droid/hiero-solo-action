@@ -181,19 +181,9 @@ runs:
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
 
-        # Port forward HAProxy (only if service exists)
-        if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.haproxyPort }}:50211 &
-        else
-          echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
-        fi
-
-        # Port forward gRPC proxy (only if service exists)
-        if kubectl get svc envoy-proxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/envoy-proxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.grpcProxyPort }}:8080 &
-        else
-          echo "gRPC proxy service envoy-proxy-node1-svc not found, skipping port-forward"
-        fi
+        # Note: Solo CLI automatically handles port forwarding for HAProxy and gRPC proxy
+        # Manual port forwarding is not needed and causes conflicts
+        echo "Port forwarding is handled automatically by Solo CLI"
 
     - name: Deploy MirrorNode
       if: ${{ inputs.installMirrorNode == 'true' }} # see https://github.com/actions/runner/issues/2238
@@ -208,6 +198,7 @@ runs:
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
+        # Port forward mirror node services (these are separate from the main network)
         # Port forward mirror node REST API (only if service exists)
         if kubectl get svc mirror-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortRest }}:80 &
