@@ -99,6 +99,7 @@ runs:
         echo "installMirrorNode: ${{ inputs.installMirrorNode }}"
         echo "is installMirrorNode: ${{ inputs.installMirrorNode == 'true' }}"
         echo "numConsensusNodes: ${{ inputs.numConsensusNodes }}"
+        echo "hieroVersion: ${{ inputs.hieroVersion }}"
 
     - name: Setup Java
       uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
@@ -171,8 +172,8 @@ runs:
         # Setup the Solo cluster
         solo cluster-ref config setup -s $SOLO_CLUSTER_NAME
 
-        # Deploy network
-        solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT
+        # Deploy network with specified Hiero version
+        solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT --release-tag $HIERO_VERSION
 
         # Setup node
         solo consensus node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
