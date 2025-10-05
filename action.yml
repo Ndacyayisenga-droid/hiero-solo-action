@@ -9,7 +9,7 @@ inputs:
   hieroVersion:
     description: "Version of Hiero consensus node to be used"
     required: false
-    default: "v0.70.0"
+    default: "v0.65.1"
   mirrorNodeVersion:
     description: "Version of the mirror node to be used"
     required: false
@@ -185,6 +185,10 @@ runs:
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
 
+        # Debug: Inspect remote configuration
+        echo "Remote configuration contents:"
+        kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
+
         # Port forward HAProxy (only if service exists)
         if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.haproxyPort }}:50211 &
@@ -212,6 +216,9 @@ runs:
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
+        # Debug: List pods in the solo namespace
+        echo "Listing pods in namespace $SOLO_NAMESPACE:"
+        kubectl get pods -n $SOLO_NAMESPACE
         # Port forward mirror node REST API (only if service exists)
         if kubectl get svc mirror-rest-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/mirror-rest-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortRest }}:80 &
@@ -251,6 +258,9 @@ runs:
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
+        # Debug: List pods in the solo namespace
+        echo "Listing pods in namespace $SOLO_NAMESPACE:"
+        kubectl get pods -n $SOLO_NAMESPACE
         # Port forward JSON-RPC-Relay (only if service exists)
         if kubectl get svc relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:7546 &
@@ -315,3 +325,4 @@ runs:
 branding:
   icon: "share-2"
   color: "black"
+  
