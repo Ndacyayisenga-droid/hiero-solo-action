@@ -172,7 +172,7 @@ runs:
         solo cluster-ref config setup -s $SOLO_CLUSTER_NAME
 
         # Deploy network
-        solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT --num-consensus-nodes $NUM_CONSENSUS_NODES
+        solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT
 
         # Setup node
         solo consensus node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
