@@ -237,17 +237,13 @@ runs:
           echo "Mirror node service mirror-rest-$MIRROR_NODE_ID not found, skipping port-forward"
         fi
         # Port forward mirror node gRPC (only if service exists)
-        if kubectl get svc mirror-grpc-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/nu
-System: ll 2>&1; then
-          kubectl port-forward svc/mirror-grpc-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortGrpc }}: porém
-System: 5600 &
+        if kubectl get svc mirror-grpc-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/mirror-grpc-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortGrpc }}:5600 &
         else
           echo "Mirror node service mirror-grpc-$MIRROR_NODE_ID not found, skipping port-forward"
         fi
         # Port forward mirror node web3 (only if service exists)
-        if kubectl get svc
-
- mirror-web3-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+        if kubectl get svc mirror-web3-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/mirror-web3-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortWeb3Rest }}:80 &
         else
           echo "Mirror node service mirror-web3-$MIRROR_NODE_ID not found, skipping port-forward"
@@ -268,7 +264,7 @@ System: 5600 &
         MIRROR_NODE_ID: mirror-node1
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay node add -i node1 --mirror-node-id $MIRROR_NODE_ID --deployment $SOLO_DEPLOYMENT
+        solo relay node add -i node1 -i $MIRROR_NODE_ID --deployment $SOLO_DEPLOYMENT
         echo "JSON-RPC-Relay installed successfully"
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
