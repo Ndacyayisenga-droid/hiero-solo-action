@@ -42,7 +42,7 @@ inputs:
   haproxyPort:
     description: "Port for HAProxy"
     required: false
-    default: "50211"
+    default: "50212"
   soloVersion:
     description: "Version of Solo CLI to install"
     required: false
@@ -185,9 +185,17 @@ runs:
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
 
-        # Debug: Inspect remote configuration
-        echo "Remote configuration contents:"
-        kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
+        # Debug: List pods in the solo namespace
+        echo "Listing pods in namespace $SOLO_NAMESPACE:"
+        kubectl get pods -n $SOLO_NAMESPACE
+
+        # Debug: List all ConfigMaps in the solo namespace
+        echo "Listing ConfigMaps in namespace $SOLO_NAMESPACE:"
+        kubectl get configmap -n $SOLO_NAMESPACE -o name || echo "No ConfigMaps found in namespace $SOLO_NAMESPACE"
+
+        # Debug: Check for processes using HAProxy port
+        echo "Checking processes on port ${{ inputs.haproxyPort }}:"
+        lsof -i :${{ inputs.haproxyPort }} || echo "No processes found on port ${{ inputs.haproxyPort }}"
 
         # Port forward HAProxy (only if service exists)
         if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
@@ -325,4 +333,3 @@ runs:
 branding:
   icon: "share-2"
   color: "black"
-  
