@@ -9,7 +9,7 @@ inputs:
   hieroVersion:
     description: "Version of Hiero consensus node to be used"
     required: false
-    default: "v0.66.0"
+    default: "v0.65.1"
   mirrorNodeVersion:
     description: "Version of the mirror node to be used"
     required: false
@@ -46,7 +46,7 @@ inputs:
   soloVersion:
     description: "Version of Solo CLI to install"
     required: false
-    default: "0.43.2"
+    default: "0.46.1"
   javaRestApiPort:
     description: "Port for Java-based REST API"
     required: false
@@ -55,6 +55,10 @@ inputs:
     description: "Amount of HBAR to be assigned to the created accounts"
     required: false
     default: "10000000"
+  numConsensusNodes:
+    description: "Number of consensus nodes to deploy"
+    required: false
+    default: "1"
 outputs:
   accountId:
     description: "Account ID of the generated ED25519 account (default for simplicity)"
@@ -94,27 +98,24 @@ runs:
       run: |
         echo "installMirrorNode: ${{ inputs.installMirrorNode }}"
         echo "is installMirrorNode: ${{ inputs.installMirrorNode == 'true' }}"
-
+        echo "numConsensusNodes: ${{ inputs.numConsensusNodes }}"
+        echo "hieroVersion: ${{ inputs.hieroVersion }}"
     - name: Setup Java
       uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
       with:
         distribution: temurin
         java-version: 21
-
     - name: Setup Node
       uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
       with:
         node-version: 22
-
     - name: Install WGet CLI
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y wget
-
-    - name: Install Python
+    - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.10"
-
     - name: Setup Kind
       uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
       with:
@@ -124,17 +125,18 @@ runs:
         kubectl_version: v1.31.4
         verbosity: 3
         wait: 120s
-
     - name: Cleanup Previous Runs
       shell: bash
       run: |
         rm -rf ~/.solo
         kind delete cluster --name solo-e2e || true
-
+        # Kill any existing port-forward processes to avoid conflicts
+        pkill -f "kubectl port-forward" || true
+        # Debug: Check for processes using port 50211
+        netstat -tlnp | grep 50211 || echo "No process using port 50211"
     - name: Install Solo
       shell: bash
       run: npm install -g @hashgraph/solo@${{ inputs.soloVersion }}
-
     - name: Deploy Solo Test Network
       shell: bash
       env:
@@ -143,92 +145,120 @@ runs:
         SOLO_CLUSTER_SETUP_NAMESPACE: solo-cluster
         SOLO_DEPLOYMENT: solo-deployment
         HIERO_VERSION: ${{ inputs.hieroVersion }}
+        NUM_CONSENSUS_NODES: ${{ inputs.numConsensusNodes }}
       run: |
         # Create a Kubernetes cluster using kind
         kind create cluster -n $SOLO_CLUSTER_NAME
-
-        # Initialize the Solo CLI configuration
-        solo init
-
         # Connect the Solo CLI to the kind cluster using a cluster reference name
-        solo cluster-ref connect --cluster-ref kind-$SOLO_CLUSTER_NAME --context kind-$SOLO_CLUSTER_NAME
-
+        solo cluster-ref config connect --cluster-ref kind-$SOLO_CLUSTER_NAME --context kind-$SOLO_CLUSTER_NAME
         # Create deployment
-        solo deployment create -n $SOLO_NAMESPACE --deployment $SOLO_DEPLOYMENT
-
-        # Add the kind cluster to the deployment with 1 consensus node
-        solo deployment add-cluster --deployment $SOLO_DEPLOYMENT --cluster-ref kind-$SOLO_CLUSTER_NAME --num-consensus-nodes 1
-
+        solo deployment config create -n $SOLO_NAMESPACE --deployment $SOLO_DEPLOYMENT
+        # Add the kind cluster to the deployment with specified number of consensus nodes
+        solo deployment cluster attach --deployment $SOLO_DEPLOYMENT --cluster-ref kind-$SOLO_CLUSTER_NAME --num-consensus-nodes $NUM_CONSENSUS_NODES
+        # Debug: Check solo-config ConfigMap
+        echo "Checking solo-config ConfigMap after cluster attach:"
+        kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "ConfigMap solo-config not found"
+        # Debug: Log events in the namespace
+        echo "Listing events in namespace $SOLO_NAMESPACE:"
+        kubectl get events -n $SOLO_NAMESPACE
         # Generate node keys
-        solo node keys --gossip-keys --tls-keys -i node1 --deployment $SOLO_DEPLOYMENT
-
+        solo keys consensus generate --gossip-keys --tls-keys -i node1 --deployment $SOLO_DEPLOYMENT
         # Setup the Solo cluster
-        solo cluster-ref setup -s $SOLO_CLUSTER_NAME
-
-        # Deploy network
-        solo network deploy -i node1 --deployment $SOLO_DEPLOYMENT
-
+        solo cluster-ref config setup -s $SOLO_CLUSTER_NAME
+        # Deploy network with specified Hiero version
+        solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT --release-tag $HIERO_VERSION
         # Setup node
-        solo node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
-
+        solo consensus node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
         # Start node
-        solo node start -i node1 --deployment $SOLO_DEPLOYMENT
-
-        # Debug: List services in the solo namespace
+        solo consensus node start -i node1 --deployment $SOLO_DEPLOYMENT
+        # Debug: List services and pods in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
-
-        # Port forward HAProxy (only if service exists)
+        echo "Listing pods in namespace $SOLO_NAMESPACE:"
+        kubectl get pods -n $SOLO_NAMESPACE
+        # Debug: Inspect remote configuration
+        echo "Remote configuration contents:"
+        kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
+        # Wait for pods to be ready
+        kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE --all --timeout=300s
+        # Port forward HAProxy (use dynamic port)
         if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.haproxyPort }}:50211 &
+          kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE :50211 &
+          sleep 5
+          export HAPROXY_PORT=$(kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==50211)].nodePort}')
+          echo "HAProxy port forwarded to: $HAPROXY_PORT"
         else
           echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
         fi
-
-        # Port forward gRPC proxy (only if service exists)
+        # Port forward gRPC proxy (use dynamic port)
         if kubectl get svc envoy-proxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/envoy-proxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.grpcProxyPort }}:8080 &
+          kubectl port-forward svc/envoy-proxy-node1-svc -n $SOLO_NAMESPACE :8080 &
+          sleep 5
+          export GRPC_PORT=$(kubectl get svc envoy-proxy-node1-svc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==8080)].nodePort}')
+          echo "gRPC proxy port forwarded to: $GRPC_PORT"
         else
           echo "gRPC proxy service envoy-proxy-node1-svc not found, skipping port-forward"
         fi
-
     - name: Deploy MirrorNode
-      if: ${{ inputs.installMirrorNode == 'true' }} # see https://github.com/actions/runner/issues/2238
+      if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
       env:
         SOLO_NAMESPACE: solo
         SOLO_DEPLOYMENT: solo-deployment
         MIRROR_NODE_VERSION: ${{ inputs.mirrorNodeVersion }}
       run: |
-        solo mirror-node deploy --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT --mirror-node-version $MIRROR_NODE_VERSION --pinger
+        # Deploy mirror node using correct command
+        solo mirror node add --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT
+        # Wait for mirror node pods to be ready
+        kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE -l app.kubernetes.io/component=mirror-node --timeout=300s
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
-        # Port forward mirror node REST API (only if service exists)
+        # Debug: List pods in the solo namespace
+        echo "Listing pods in namespace $SOLO_NAMESPACE:"
+        kubectl get pods -n $SOLO_NAMESPACE
+        # Debug: Inspect remote configuration
+        echo "Remote configuration contents:"
+        kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
+        # Port forward mirror node REST API (use dynamic port)
         if kubectl get svc mirror-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortRest }}:80 &
+          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE :${{ inputs.mirrorNodePortRest }} &
+          sleep 5
+          export REST_PORT=$(kubectl get svc mirror-rest -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.mirrorNodePortRest }})].nodePort}')
+          echo "Mirror node REST API port forwarded to: $REST_PORT"
         else
           echo "Mirror node service mirror-rest not found, skipping port-forward"
         fi
-        # Port forward mirror node gRPC (only if service exists)
+        # Port forward mirror node gRPC (use dynamic port)
         if kubectl get svc mirror-grpc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortGrpc }}:5600 &
+          kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE :${{ inputs.mirrorNodePortGrpc }} &
+          sleep 5
+          export GRPC_MIRROR_PORT=$(kubectl get svc mirror-grpc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.mirrorNodePortGrpc }})].nodePort}')
+          echo "Mirror node gRPC port forwarded to: $GRPC_MIRROR_PORT"
         else
           echo "Mirror node service mirror-grpc not found, skipping port-forward"
         fi
-        # Port forward mirror node web3 (only if service exists)
+        # Port forward mirror node web3 (use dynamic port)
         if kubectl get svc mirror-web3 -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortWeb3Rest }}:80 &
+          kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE :${{ inputs.mirrorNodePortWeb3Rest }} &
+          sleep 5
+          export WEB3_PORT=$(kubectl get svc mirror-web3 -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.mirrorNodePortWeb3Rest }})].nodePort}')
+          echo "Mirror node Web3 port forwarded to: $WEB3_PORT"
         else
           echo "Mirror node service mirror-web3 not found, skipping port-forward"
         fi
-        # Port forward Java REST API (only if service exists)
+        # Port forward Java REST API (use dynamic port)
         if kubectl get svc mirror-restjava -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE ${{ inputs.javaRestApiPort }}:80 &
+          kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE :${{ inputs.javaRestApiPort }} &
+          sleep 5
+          export JAVA_REST_PORT=$(kubectl get svc mirror-restjava -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.javaRestApiPort }})].nodePort}')
+          echo "Java REST API port forwarded to: $JAVA_REST_PORT"
         else
           echo "Java REST API service mirror-restjava not found, skipping port-forward"
         fi
-
+        # Debug: Check for running port-forward processes
+        echo "Listing active port-forward processes:"
+        ps aux | grep "kubectl port-forward" || echo "No port-forward processes running"
     - name: Deploy JSON-RPC-Relay
       if: ${{ inputs.installRelay == 'true' }}
       shell: bash
@@ -237,18 +267,28 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy -i node1 --deployment $SOLO_DEPLOYMENT
+        solo relay node add --deployment $SOLO_DEPLOYMENT
+        # Wait for relay pods to be ready
+        kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE -l app.kubernetes.io/component=relay --timeout=300s
         echo "JSON-RPC-Relay installed successfully"
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
-        # Port forward JSON-RPC-Relay (only if service exists)
-        if kubectl get svc relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:7546 &
+        # Debug: List pods in the solo namespace
+        echo "Listing pods in namespace $SOLO_NAMESPACE:"
+        kubectl get pods -n $SOLO_NAMESPACE
+        # Port forward JSON-RPC-Relay (use dynamic port)
+        if kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE :${{ inputs.relayPort }} &
+          sleep 5
+          export RELAY_PORT=$(kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.relayPort }})].nodePort}')
+          echo "JSON-RPC-Relay port forwarded to: $RELAY_PORT"
         else
-          echo "JSON-RPC-Relay service relay-node1-hedera-json-rpc-relay not found, Skipping port-forward"
+          echo "JSON-RPC-Relay service relay-hedera-json-rpc-relay not found, skipping port-forward"
         fi
-
+        # Debug: Check for running port-forward processes
+        echo "Listing active port-forward processes:"
+        ps aux | grep "kubectl port-forward" || echo "No port-forward processes running"
     - name: Create ECDSA Account
       id: create-ecdsa
       shell: bash
@@ -259,7 +299,7 @@ runs:
         HBAR_AMOUNT: ${{ inputs.hbarAmount || 10000000 }}
       run: |
         echo "Creating ECDSA account..."
-        solo account create --generate-ecdsa-key --deployment $SOLO_DEPLOYMENT > account_create_output_ecdsa.txt
+        solo ledger account create --generate-ecdsa-key --deployment $SOLO_DEPLOYMENT > account_create_output_ecdsa.txt
         cat account_create_output_ecdsa.txt
         JSON=$(cat account_create_output_ecdsa.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
           echo "Error: Python script extractAccountAsJson.py failed"
@@ -268,14 +308,13 @@ runs:
         export ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$ACCOUNT_ID -n $SOLO_NAMESPACE -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id "${ACCOUNT_ID}" --hbar-amount "${HBAR_AMOUNT}" --deployment "${SOLO_DEPLOYMENT}"
+        solo ledger account update --account-id "${ACCOUNT_ID}" --hbar-amount "${HBAR_AMOUNT}" --deployment "${SOLO_DEPLOYMENT}"
         echo "accountId=$ACCOUNT_ID"
         echo "publicKey=$ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$ACCOUNT_PRIVATE_KEY"
         echo "accountId=$ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "publicKey=$ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
-
     - name: Create ED25519 Account
       id: create-ed25519
       shell: bash
@@ -286,7 +325,7 @@ runs:
         HBAR_AMOUNT: ${{ inputs.hbarAmount || 10000000 }}
       run: |
         echo "Creating ED25519 account..."
-        solo account create --deployment $SOLO_DEPLOYMENT > account_create_output_ed25519.txt
+        solo ledger account create --deployment $SOLO_DEPLOYMENT > account_create_output_ed25519.txt
         cat account_create_output_ed25519.txt
         JSON=$(cat account_create_output_ed25519.txt | python3 $GITHUB_ACTION_PATH/extractAccountAsJson.py) || {
           echo "Error: Python script extractAccountAsJson.py failed"
@@ -295,15 +334,13 @@ runs:
         export ACCOUNT_ID=$(echo $JSON | jq -r '.accountId')
         export ACCOUNT_PUBLIC_KEY=$(echo $JSON | jq -r '.publicKey')
         export ACCOUNT_PRIVATE_KEY=$(kubectl get secret account-key-$ACCOUNT_ID -n $SOLO_NAMESPACE -o jsonpath='{.data.privateKey}' | base64 -d | xargs)
-        solo account update --account-id "${ACCOUNT_ID}" --hbar-amount "${HBAR_AMOUNT}" --deployment "${SOLO_DEPLOYMENT}"
+        solo ledger account update --account-id "${ACCOUNT_ID}" --hbar-amount "${HBAR_AMOUNT}" --deployment "${SOLO_DEPLOYMENT}"
         echo "accountId=$ACCOUNT_ID"
         echo "publicKey=$ACCOUNT_PUBLIC_KEY"
         echo "privateKey=$ACCOUNT_PRIVATE_KEY"
         echo "accountId=$ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "publicKey=$ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
-
-# Ref: https://haya14busa.github.io/github-action-brandings/
 branding:
   icon: "share-2"
   color: "black"
