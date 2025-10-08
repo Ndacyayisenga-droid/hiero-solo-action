@@ -112,7 +112,7 @@ runs:
     - name: Install WGet CLI
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y wget
-    - name: Install Python
+    - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.10"
@@ -158,6 +158,9 @@ runs:
         # Debug: Check solo-config ConfigMap
         echo "Checking solo-config ConfigMap after cluster attach:"
         kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "ConfigMap solo-config not found"
+        # Debug: Log events in the namespace
+        echo "Listing events in namespace $SOLO_NAMESPACE:"
+        kubectl get events -n $SOLO_NAMESPACE
         # Generate node keys
         solo keys consensus generate --gossip-keys --tls-keys -i node1 --deployment $SOLO_DEPLOYMENT
         # Setup the Solo cluster
@@ -214,42 +217,48 @@ runs:
         # Debug: List pods in the solo namespace
         echo "Listing pods in namespace $SOLO_NAMESPACE:"
         kubectl get pods -n $SOLO_NAMESPACE
+        # Debug: Inspect remote configuration
+        echo "Remote configuration contents:"
+        kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
         # Port forward mirror node REST API (use dynamic port)
         if kubectl get svc mirror-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE :80 &
+          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE :${{ inputs.mirrorNodePortRest }} &
           sleep 5
-          export REST_PORT=$(kubectl get svc mirror-rest -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+          export REST_PORT=$(kubectl get svc mirror-rest -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.mirrorNodePortRest }})].nodePort}')
           echo "Mirror node REST API port forwarded to: $REST_PORT"
         else
           echo "Mirror node service mirror-rest not found, skipping port-forward"
         fi
         # Port forward mirror node gRPC (use dynamic port)
         if kubectl get svc mirror-grpc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE :5600 &
+          kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE :${{ inputs.mirrorNodePortGrpc }} &
           sleep 5
-          export GRPC_MIRROR_PORT=$(kubectl get svc mirror-grpc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==5600)].nodePort}')
+          export GRPC_MIRROR_PORT=$(kubectl get svc mirror-grpc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.mirrorNodePortGrpc }})].nodePort}')
           echo "Mirror node gRPC port forwarded to: $GRPC_MIRROR_PORT"
         else
           echo "Mirror node service mirror-grpc not found, skipping port-forward"
         fi
         # Port forward mirror node web3 (use dynamic port)
         if kubectl get svc mirror-web3 -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE :80 &
+          kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE :${{ inputs.mirrorNodePortWeb3Rest }} &
           sleep 5
-          export WEB3_PORT=$(kubectl get svc mirror-web3 -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+          export WEB3_PORT=$(kubectl get svc mirror-web3 -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.mirrorNodePortWeb3Rest }})].nodePort}')
           echo "Mirror node Web3 port forwarded to: $WEB3_PORT"
         else
           echo "Mirror node service mirror-web3 not found, skipping port-forward"
         fi
         # Port forward Java REST API (use dynamic port)
         if kubectl get svc mirror-restjava -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE :80 &
+          kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE :${{ inputs.javaRestApiPort }} &
           sleep 5
-          export JAVA_REST_PORT=$(kubectl get svc mirror-restjava -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+          export JAVA_REST_PORT=$(kubectl get svc mirror-restjava -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.javaRestApiPort }})].nodePort}')
           echo "Java REST API port forwarded to: $JAVA_REST_PORT"
         else
           echo "Java REST API service mirror-restjava not found, skipping port-forward"
         fi
+        # Debug: Check for running port-forward processes
+        echo "Listing active port-forward processes:"
+        ps aux | grep "kubectl port-forward" || echo "No port-forward processes running"
     - name: Deploy JSON-RPC-Relay
       if: ${{ inputs.installRelay == 'true' }}
       shell: bash
@@ -270,13 +279,16 @@ runs:
         kubectl get pods -n $SOLO_NAMESPACE
         # Port forward JSON-RPC-Relay (use dynamic port)
         if kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE :7546 &
+          kubectl port-forward svc/relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE :${{ inputs.relayPort }} &
           sleep 5
-          export RELAY_PORT=$(kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==7546)].nodePort}')
+          export RELAY_PORT=$(kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==${{ inputs.relayPort }})].nodePort}')
           echo "JSON-RPC-Relay port forwarded to: $RELAY_PORT"
         else
           echo "JSON-RPC-Relay service relay-hedera-json-rpc-relay not found, skipping port-forward"
         fi
+        # Debug: Check for running port-forward processes
+        echo "Listing active port-forward processes:"
+        ps aux | grep "kubectl port-forward" || echo "No port-forward processes running"
     - name: Create ECDSA Account
       id: create-ecdsa
       shell: bash
