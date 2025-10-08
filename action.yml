@@ -100,27 +100,22 @@ runs:
         echo "is installMirrorNode: ${{ inputs.installMirrorNode == 'true' }}"
         echo "numConsensusNodes: ${{ inputs.numConsensusNodes }}"
         echo "hieroVersion: ${{ inputs.hieroVersion }}"
-
     - name: Setup Java
       uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
       with:
         distribution: temurin
         java-version: 21
-
     - name: Setup Node
       uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
       with:
         node-version: 22
-
     - name: Install WGet CLI
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y wget
-
     - name: Install Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.10"
-
     - name: Setup Kind
       uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
       with:
@@ -130,17 +125,16 @@ runs:
         kubectl_version: v1.31.4
         verbosity: 3
         wait: 120s
-
     - name: Cleanup Previous Runs
       shell: bash
       run: |
+        # Kill any existing port-forward processes to avoid port conflicts
+        pkill -f "kubectl port-forward" || true
         rm -rf ~/.solo
         kind delete cluster --name solo-e2e || true
-
     - name: Install Solo
       shell: bash
       run: npm install -g @hashgraph/solo@${{ inputs.soloVersion }}
-
     - name: Deploy Solo Test Network
       shell: bash
       env:
@@ -153,56 +147,52 @@ runs:
       run: |
         # Create a Kubernetes cluster using kind
         kind create cluster -n $SOLO_CLUSTER_NAME
-
-        # Initialize the Solo CLI configuration
-        solo init
-
         # Connect the Solo CLI to the kind cluster using a cluster reference name
         solo cluster-ref config connect --cluster-ref kind-$SOLO_CLUSTER_NAME --context kind-$SOLO_CLUSTER_NAME
-
         # Create deployment
         solo deployment config create -n $SOLO_NAMESPACE --deployment $SOLO_DEPLOYMENT
-
         # Add the kind cluster to the deployment with specified number of consensus nodes
         solo deployment cluster attach --deployment $SOLO_DEPLOYMENT --cluster-ref kind-$SOLO_CLUSTER_NAME --num-consensus-nodes $NUM_CONSENSUS_NODES
-
         # Generate node keys
         solo keys consensus generate --gossip-keys --tls-keys -i node1 --deployment $SOLO_DEPLOYMENT
-
         # Setup the Solo cluster
-        solo cluster-ref config setup -s $SOLO_CLUSTER_NAME
-
+        solo cluster-ref config setup -s $SOLO_CLUSTER_SETUP_NAMESPACE
         # Deploy network with specified Hiero version
         solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT --release-tag $HIERO_VERSION
-
         # Setup node
         solo consensus node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
-
         # Start node
         solo consensus node start -i node1 --deployment $SOLO_DEPLOYMENT
-
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
-
         # Debug: Inspect remote configuration
         echo "Remote configuration contents:"
         kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
-
+        # Ensure port is free before forwarding
+        if lsof -i:${{ inputs.haproxyPort }}; then
+          echo "Port ${{ inputs.haproxyPort }} is in use, attempting to free it"
+          pkill -f "kubectl port-forward.*${{ inputs.haproxyPort }}" || true
+        fi
         # Port forward HAProxy (only if service exists)
         if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.haproxyPort }}:50211 &
+          sleep 2 # Allow port-forward to stabilize
         else
           echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
         fi
-
+        # Ensure port is free before forwarding
+        if lsof -i:${{ inputs.grpcProxyPort }}; then
+          echo "Port ${{ inputs.grpcProxyPort }} is in use, attempting to free it"
+          pkill -f "kubectl port-forward.*${{ inputs.grpcProxyPort }}" || true
+        fi
         # Port forward gRPC proxy (only if service exists)
         if kubectl get svc envoy-proxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/envoy-proxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.grpcProxyPort }}:8080 &
+          sleep 2 # Allow port-forward to stabilize
         else
           echo "gRPC proxy service envoy-proxy-node1-svc not found, skipping port-forward"
         fi
-
     - name: Deploy MirrorNode
       if: ${{ inputs.installMirrorNode == 'true' }}
       shell: bash
@@ -210,50 +200,75 @@ runs:
         SOLO_NAMESPACE: solo
         SOLO_DEPLOYMENT: solo-deployment
         MIRROR_NODE_VERSION: ${{ inputs.mirrorNodeVersion }}
-        MIRROR_NODE_ID: mirror-node1
       run: |
-        solo mirror node add --mirror-node-id $MIRROR_NODE_ID --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT --mirror-node-version $MIRROR_NODE_VERSION --pinger
+        # Deploy mirror node without --mirror-node-id
+        solo mirror-node deploy --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT --mirror-node-version $MIRROR_NODE_VERSION --pinger
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
         # Debug: List pods in the solo namespace
         echo "Listing pods in namespace $SOLO_NAMESPACE:"
         kubectl get pods -n $SOLO_NAMESPACE
+        # Wait for mirror node pods to be ready
+        echo "Waiting for mirror node pods to be ready..."
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mirror-node -n $SOLO_NAMESPACE --timeout=300s
+        # Ensure port is free before forwarding
+        if lsof -i:${{ inputs.mirrorNodePortRest }}; then
+          echo "Port ${{ inputs.mirrorNodePortRest }} is in use, attempting to free it"
+          pkill -f "kubectl port-forward.*${{ inputs.mirrorNodePortRest }}" || true
+        fi
         # Port forward mirror node REST API (only if service exists)
-        if kubectl get svc mirror-rest-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-rest-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortRest }}:80 &
+        if kubectl get svc mirror-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortRest }}:80 &
+          sleep 2
         else
-          echo "Mirror node service mirror-rest-$MIRROR_NODE_ID not found, skipping port-forward"
+          echo "Mirror node service mirror-rest not found, skipping port-forward"
+        fi
+        # Ensure port is free before forwarding
+        if lsof -i:${{ inputs.mirrorNodePortGrpc }}; then
+          echo "Port ${{ inputs.mirrorNodePortGrpc }} is in use, attempting to free it"
+          pkill -f "kubectl port-forward.*${{ inputs.mirrorNodePortGrpc }}" || true
         fi
         # Port forward mirror node gRPC (only if service exists)
-        if kubectl get svc mirror-grpc-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-grpc-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortGrpc }}:5600 &
+        if kubectl get svc mirror-grpc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortGrpc }}:5600 &
+          sleep 2
         else
-          echo "Mirror node service mirror-grpc-$MIRROR_NODE_ID not found, skipping port-forward"
+          echo "Mirror node service mirror-grpc not found, skipping port-forward"
+        fi
+        # Ensure port is free before forwarding
+        if lsof -i:${{ inputs.mirrorNodePortWeb3Rest }}; then
+          echo "Port ${{ inputs.mirrorNodePortWeb3Rest }} is in use, attempting to free it"
+          pkill -f "kubectl port-forward.*${{ inputs.mirrorNodePortWeb3Rest }}" || true
         fi
         # Port forward mirror node web3 (only if service exists)
-        if kubectl get svc mirror-web3-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-web3-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortWeb3Rest }}:80 &
+        if kubectl get svc mirror-web3 -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortWeb3Rest }}:80 &
+          sleep 2
         else
-          echo "Mirror node service mirror-web3-$MIRROR_NODE_ID not found, skipping port-forward"
+          echo "Mirror node service mirror-web3 not found, skipping port-forward"
+        fi
+        # Ensure port is free before forwarding
+        if lsof -i:${{ inputs.javaRestApiPort }}; then
+          echo "Port ${{ inputs.javaRestApiPort }} is in use, attempting to free it"
+          pkill -f "kubectl port-forward.*${{ inputs.javaRestApiPort }}" || true
         fi
         # Port forward Java REST API (only if service exists)
-        if kubectl get svc mirror-restjava-$MIRROR_NODE_ID -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-restjava-$MIRROR_NODE_ID -n $SOLO_NAMESPACE ${{ inputs.javaRestApiPort }}:80 &
+        if kubectl get svc mirror-restjava -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE ${{ inputs.javaRestApiPort }}:80 &
+          sleep 2
         else
-          echo "Java REST API service mirror-restjava-$MIRROR_NODE_ID not found, skipping port-forward"
+          echo "Java REST API service mirror-restjava not found, skipping port-forward"
         fi
-
     - name: Deploy JSON-RPC-Relay
       if: ${{ inputs.installRelay == 'true' }}
       shell: bash
       env:
         SOLO_NAMESPACE: solo
         SOLO_DEPLOYMENT: solo-deployment
-        MIRROR_NODE_ID: mirror-node1
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay node add -i node1 --mirror-node-id $MIRROR_NODE_ID --deployment $SOLO_DEPLOYMENT
+        solo relay deploy --deployment $SOLO_DEPLOYMENT
         echo "JSON-RPC-Relay installed successfully"
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
@@ -261,13 +276,18 @@ runs:
         # Debug: List pods in the solo namespace
         echo "Listing pods in namespace $SOLO_NAMESPACE:"
         kubectl get pods -n $SOLO_NAMESPACE
-        # Port forward JSON-RPC-Relay (only if service exists)
-        if kubectl get svc relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/relay-node1-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:7546 &
-        else
-          echo "JSON-RPC-Relay service relay-node1-hedera-json-rpc-relay not found, skipping port-forward"
+        # Ensure port is free before forwarding
+        if lsof -i:${{ inputs.relayPort }}; then
+          echo "Port ${{ inputs.relayPort }} is in use, attempting to free it"
+          pkill -f "kubectl port-forward.*${{ inputs.relayPort }}" || true
         fi
-
+        # Port forward JSON-RPC-Relay (only if service exists)
+        if kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
+          kubectl port-forward svc/relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:7546 &
+          sleep 2
+        else
+          echo "JSON-RPC-Relay service relay-hedera-json-rpc-relay not found, skipping port-forward"
+        fi
     - name: Create ECDSA Account
       id: create-ecdsa
       shell: bash
@@ -294,7 +314,6 @@ runs:
         echo "accountId=$ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "publicKey=$ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
-
     - name: Create ED25519 Account
       id: create-ed25519
       shell: bash
@@ -321,7 +340,6 @@ runs:
         echo "accountId=$ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "publicKey=$ACCOUNT_PUBLIC_KEY" >> $GITHUB_OUTPUT
         echo "privateKey=$ACCOUNT_PRIVATE_KEY" >> $GITHUB_OUTPUT
-
 branding:
   icon: "share-2"
   color: "black"
