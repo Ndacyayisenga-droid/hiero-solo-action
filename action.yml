@@ -132,6 +132,8 @@ runs:
         kind delete cluster --name solo-e2e || true
         # Kill any existing port-forward processes to avoid conflicts
         pkill -f "kubectl port-forward" || true
+        # Debug: Check for processes using port 50211
+        netstat -tlnp | grep 50211 || echo "No process using port 50211"
     - name: Install Solo
       shell: bash
       run: npm install -g @hashgraph/solo@${{ inputs.soloVersion }}
@@ -153,6 +155,9 @@ runs:
         solo deployment config create -n $SOLO_NAMESPACE --deployment $SOLO_DEPLOYMENT
         # Add the kind cluster to the deployment with specified number of consensus nodes
         solo deployment cluster attach --deployment $SOLO_DEPLOYMENT --cluster-ref kind-$SOLO_CLUSTER_NAME --num-consensus-nodes $NUM_CONSENSUS_NODES
+        # Debug: Check solo-config ConfigMap
+        echo "Checking solo-config ConfigMap after cluster attach:"
+        kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "ConfigMap solo-config not found"
         # Generate node keys
         solo keys consensus generate --gossip-keys --tls-keys -i node1 --deployment $SOLO_DEPLOYMENT
         # Setup the Solo cluster
@@ -163,15 +168,17 @@ runs:
         solo consensus node setup -i node1 --deployment $SOLO_DEPLOYMENT -t $HIERO_VERSION --quiet-mode
         # Start node
         solo consensus node start -i node1 --deployment $SOLO_DEPLOYMENT
-        # Debug: List services in the solo namespace
+        # Debug: List services and pods in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
+        echo "Listing pods in namespace $SOLO_NAMESPACE:"
+        kubectl get pods -n $SOLO_NAMESPACE
         # Debug: Inspect remote configuration
         echo "Remote configuration contents:"
         kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
         # Wait for pods to be ready
         kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE --all --timeout=300s
-        # Port forward HAProxy (use dynamic port to avoid conflicts)
+        # Port forward HAProxy (use dynamic port)
         if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE :50211 &
           sleep 5
@@ -197,8 +204,8 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
         MIRROR_NODE_VERSION: ${{ inputs.mirrorNodeVersion }}
       run: |
-        # Deploy mirror node
-        solo mirror node deploy --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT --mirror-node-version $MIRROR_NODE_VERSION --pinger
+        # Deploy mirror node using correct command
+        solo mirror node add --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT
         # Wait for mirror node pods to be ready
         kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE -l app.kubernetes.io/component=mirror-node --timeout=300s
         # Debug: List services in the solo namespace
@@ -251,7 +258,7 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
       run: |
         echo "Installing JSON-RPC-Relay..."
-        solo relay deploy --deployment $SOLO_DEPLOYMENT
+        solo relay node add --deployment $SOLO_DEPLOYMENT
         # Wait for relay pods to be ready
         kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE -l app.kubernetes.io/component=relay --timeout=300s
         echo "JSON-RPC-Relay installed successfully"
