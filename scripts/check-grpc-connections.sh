@@ -4,9 +4,9 @@ set -e
 
 echo "🔍 Validating gRPC connections..."
 
-# Wait a bit for port forwarding to establish
+# Wait longer for port forwarding to establish
 echo "⏳ Waiting for port forwarding to establish..."
-sleep 10
+sleep 30
 
 # Debug: Show what's listening on the expected ports
 echo "🔍 Debug: Checking what's listening on expected ports..."
@@ -16,7 +16,7 @@ netstat -tlnp 2>/dev/null | grep -E ":(9998|5600|50211)" || echo "No services fo
 check_port() {
     local port=$1
     local service_name=$2
-    local timeout=30
+    local timeout=60
     local count=0
 
     echo "Checking $service_name on port $port..."
@@ -47,16 +47,22 @@ test_grpc_connection() {
 
         # Only test gRPC reflection for Mirror Node gRPC (port 5600) which supports it
         if [ "$port" = "5600" ]; then
-            # Try to list services (this is a common gRPC reflection endpoint)
-            if timeout 10 grpcurl -plaintext localhost:$port list >/dev/null 2>&1; then
-                echo "✅ gRPC connection to $service_name successful"
-                echo "Available services:"
-                timeout 10 grpcurl -plaintext localhost:$port list
-                return 0
-            else
-                echo "⚠️  gRPC reflection not available, but port is listening"
-                return 0
-            fi
+            # Try to list services with retries
+            local retry_count=0
+            local max_retries=3
+            while [ $retry_count -lt $max_retries ]; do
+                if timeout 10 grpcurl -plaintext localhost:$port list >/dev/null 2>&1; then
+                    echo "✅ gRPC connection to $service_name successful"
+                    echo "Available services:"
+                    timeout 10 grpcurl -plaintext localhost:$port list
+                    return 0
+                fi
+                echo "⚠️ gRPC reflection attempt $((retry_count + 1)) failed, retrying..."
+                sleep 5
+                retry_count=$((retry_count + 1))
+            done
+            echo "⚠️ gRPC reflection not available, but port is listening"
+            return 0
         else
             # For other ports (9998, 50211), just confirm the port is listening
             return 0
@@ -95,7 +101,7 @@ if [ "${INSTALL_MIRROR_NODE}" = "true" ]; then
         exit 1
     fi
 else
-    echo "ℹ️  Mirror Node not installed, skipping Mirror Node gRPC validation"
+    echo "ℹ️ Mirror Node not installed, skipping Mirror Node gRPC validation"
 fi
 
 echo "🎉 All gRPC connections validated successfully!"
@@ -108,7 +114,7 @@ echo "✅ HAProxy (port 50211): Validated"
 if [ "${INSTALL_MIRROR_NODE}" = "true" ]; then
     echo "✅ Mirror Node gRPC (port 5600): Validated"
 else
-    echo "ℹ️  Mirror Node gRPC (port 5600): Not installed"
+    echo "ℹ️ Mirror Node gRPC (port 5600): Not installed"
 fi
 
 # Final debug: Show all listening ports
