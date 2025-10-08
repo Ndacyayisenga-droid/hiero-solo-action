@@ -128,10 +128,10 @@ runs:
     - name: Cleanup Previous Runs
       shell: bash
       run: |
-        # Kill any existing port-forward processes to avoid port conflicts
-        pkill -f "kubectl port-forward" || true
         rm -rf ~/.solo
         kind delete cluster --name solo-e2e || true
+        # Kill any existing port-forward processes to avoid conflicts
+        pkill -f "kubectl port-forward" || true
     - name: Install Solo
       shell: bash
       run: npm install -g @hashgraph/solo@${{ inputs.soloVersion }}
@@ -156,7 +156,7 @@ runs:
         # Generate node keys
         solo keys consensus generate --gossip-keys --tls-keys -i node1 --deployment $SOLO_DEPLOYMENT
         # Setup the Solo cluster
-        solo cluster-ref config setup -s $SOLO_CLUSTER_SETUP_NAMESPACE
+        solo cluster-ref config setup -s $SOLO_CLUSTER_NAME
         # Deploy network with specified Hiero version
         solo consensus network deploy -i node1 --deployment $SOLO_DEPLOYMENT --release-tag $HIERO_VERSION
         # Setup node
@@ -169,27 +169,19 @@ runs:
         # Debug: Inspect remote configuration
         echo "Remote configuration contents:"
         kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
-        # Ensure port is free before forwarding
-        if lsof -i:${{ inputs.haproxyPort }}; then
-          echo "Port ${{ inputs.haproxyPort }} is in use, attempting to free it"
-          pkill -f "kubectl port-forward.*${{ inputs.haproxyPort }}" || true
-        fi
+        # Wait for pods to be ready
+        kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE --all --timeout=300s
         # Port forward HAProxy (only if service exists)
         if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.haproxyPort }}:50211 &
-          sleep 2 # Allow port-forward to stabilize
+          sleep 5
         else
           echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
-        fi
-        # Ensure port is free before forwarding
-        if lsof -i:${{ inputs.grpcProxyPort }}; then
-          echo "Port ${{ inputs.grpcProxyPort }} is in use, attempting to free it"
-          pkill -f "kubectl port-forward.*${{ inputs.grpcProxyPort }}" || true
         fi
         # Port forward gRPC proxy (only if service exists)
         if kubectl get svc envoy-proxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/envoy-proxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.grpcProxyPort }}:8080 &
-          sleep 2 # Allow port-forward to stabilize
+          sleep 5
         else
           echo "gRPC proxy service envoy-proxy-node1-svc not found, skipping port-forward"
         fi
@@ -203,60 +195,39 @@ runs:
       run: |
         # Deploy mirror node without --mirror-node-id
         solo mirror-node deploy --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT --mirror-node-version $MIRROR_NODE_VERSION --pinger
+        # Wait for mirror node pods to be ready
+        kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE -l app.kubernetes.io/component=mirror-node --timeout=300s
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
         kubectl get svc -n $SOLO_NAMESPACE
         # Debug: List pods in the solo namespace
         echo "Listing pods in namespace $SOLO_NAMESPACE:"
         kubectl get pods -n $SOLO_NAMESPACE
-        # Wait for mirror node pods to be ready
-        echo "Waiting for mirror node pods to be ready..."
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mirror-node -n $SOLO_NAMESPACE --timeout=300s
-        # Ensure port is free before forwarding
-        if lsof -i:${{ inputs.mirrorNodePortRest }}; then
-          echo "Port ${{ inputs.mirrorNodePortRest }} is in use, attempting to free it"
-          pkill -f "kubectl port-forward.*${{ inputs.mirrorNodePortRest }}" || true
-        fi
         # Port forward mirror node REST API (only if service exists)
         if kubectl get svc mirror-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortRest }}:80 &
-          sleep 2
+          sleep 5
         else
           echo "Mirror node service mirror-rest not found, skipping port-forward"
-        fi
-        # Ensure port is free before forwarding
-        if lsof -i:${{ inputs.mirrorNodePortGrpc }}; then
-          echo "Port ${{ inputs.mirrorNodePortGrpc }} is in use, attempting to free it"
-          pkill -f "kubectl port-forward.*${{ inputs.mirrorNodePortGrpc }}" || true
         fi
         # Port forward mirror node gRPC (only if service exists)
         if kubectl get svc mirror-grpc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortGrpc }}:5600 &
-          sleep 2
+          sleep 5
         else
           echo "Mirror node service mirror-grpc not found, skipping port-forward"
-        fi
-        # Ensure port is free before forwarding
-        if lsof -i:${{ inputs.mirrorNodePortWeb3Rest }}; then
-          echo "Port ${{ inputs.mirrorNodePortWeb3Rest }} is in use, attempting to free it"
-          pkill -f "kubectl port-forward.*${{ inputs.mirrorNodePortWeb3Rest }}" || true
         fi
         # Port forward mirror node web3 (only if service exists)
         if kubectl get svc mirror-web3 -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortWeb3Rest }}:80 &
-          sleep 2
+          sleep 5
         else
           echo "Mirror node service mirror-web3 not found, skipping port-forward"
-        fi
-        # Ensure port is free before forwarding
-        if lsof -i:${{ inputs.javaRestApiPort }}; then
-          echo "Port ${{ inputs.javaRestApiPort }} is in use, attempting to free it"
-          pkill -f "kubectl port-forward.*${{ inputs.javaRestApiPort }}" || true
         fi
         # Port forward Java REST API (only if service exists)
         if kubectl get svc mirror-restjava -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE ${{ inputs.javaRestApiPort }}:80 &
-          sleep 2
+          sleep 5
         else
           echo "Java REST API service mirror-restjava not found, skipping port-forward"
         fi
@@ -269,6 +240,8 @@ runs:
       run: |
         echo "Installing JSON-RPC-Relay..."
         solo relay deploy --deployment $SOLO_DEPLOYMENT
+        # Wait for relay pods to be ready
+        kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE -l app.kubernetes.io/component=relay --timeout=300s
         echo "JSON-RPC-Relay installed successfully"
         # Debug: List services in the solo namespace
         echo "Listing services in namespace $SOLO_NAMESPACE:"
@@ -276,15 +249,10 @@ runs:
         # Debug: List pods in the solo namespace
         echo "Listing pods in namespace $SOLO_NAMESPACE:"
         kubectl get pods -n $SOLO_NAMESPACE
-        # Ensure port is free before forwarding
-        if lsof -i:${{ inputs.relayPort }}; then
-          echo "Port ${{ inputs.relayPort }} is in use, attempting to free it"
-          pkill -f "kubectl port-forward.*${{ inputs.relayPort }}" || true
-        fi
         # Port forward JSON-RPC-Relay (only if service exists)
         if kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
           kubectl port-forward svc/relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:7546 &
-          sleep 2
+          sleep 5
         else
           echo "JSON-RPC-Relay service relay-hedera-json-rpc-relay not found, skipping port-forward"
         fi
