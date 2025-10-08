@@ -171,17 +171,21 @@ runs:
         kubectl get configmap -n $SOLO_NAMESPACE solo-config -o yaml || echo "Failed to retrieve solo-config ConfigMap"
         # Wait for pods to be ready
         kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE --all --timeout=300s
-        # Port forward HAProxy (only if service exists)
+        # Port forward HAProxy (use dynamic port to avoid conflicts)
         if kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.haproxyPort }}:50211 &
+          kubectl port-forward svc/haproxy-node1-svc -n $SOLO_NAMESPACE :50211 &
           sleep 5
+          export HAPROXY_PORT=$(kubectl get svc haproxy-node1-svc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==50211)].nodePort}')
+          echo "HAProxy port forwarded to: $HAPROXY_PORT"
         else
           echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
         fi
-        # Port forward gRPC proxy (only if service exists)
+        # Port forward gRPC proxy (use dynamic port)
         if kubectl get svc envoy-proxy-node1-svc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/envoy-proxy-node1-svc -n $SOLO_NAMESPACE ${{ inputs.grpcProxyPort }}:8080 &
+          kubectl port-forward svc/envoy-proxy-node1-svc -n $SOLO_NAMESPACE :8080 &
           sleep 5
+          export GRPC_PORT=$(kubectl get svc envoy-proxy-node1-svc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==8080)].nodePort}')
+          echo "gRPC proxy port forwarded to: $GRPC_PORT"
         else
           echo "gRPC proxy service envoy-proxy-node1-svc not found, skipping port-forward"
         fi
@@ -193,8 +197,8 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
         MIRROR_NODE_VERSION: ${{ inputs.mirrorNodeVersion }}
       run: |
-        # Deploy mirror node without --mirror-node-id
-        solo mirror-node deploy --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT --mirror-node-version $MIRROR_NODE_VERSION --pinger
+        # Deploy mirror node
+        solo mirror node deploy --cluster-ref kind-solo-e2e --deployment $SOLO_DEPLOYMENT --mirror-node-version $MIRROR_NODE_VERSION --pinger
         # Wait for mirror node pods to be ready
         kubectl wait --for=condition=ready pod -n $SOLO_NAMESPACE -l app.kubernetes.io/component=mirror-node --timeout=300s
         # Debug: List services in the solo namespace
@@ -203,31 +207,39 @@ runs:
         # Debug: List pods in the solo namespace
         echo "Listing pods in namespace $SOLO_NAMESPACE:"
         kubectl get pods -n $SOLO_NAMESPACE
-        # Port forward mirror node REST API (only if service exists)
+        # Port forward mirror node REST API (use dynamic port)
         if kubectl get svc mirror-rest -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortRest }}:80 &
+          kubectl port-forward svc/mirror-rest -n $SOLO_NAMESPACE :80 &
           sleep 5
+          export REST_PORT=$(kubectl get svc mirror-rest -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+          echo "Mirror node REST API port forwarded to: $REST_PORT"
         else
           echo "Mirror node service mirror-rest not found, skipping port-forward"
         fi
-        # Port forward mirror node gRPC (only if service exists)
+        # Port forward mirror node gRPC (use dynamic port)
         if kubectl get svc mirror-grpc -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortGrpc }}:5600 &
+          kubectl port-forward svc/mirror-grpc -n $SOLO_NAMESPACE :5600 &
           sleep 5
+          export GRPC_MIRROR_PORT=$(kubectl get svc mirror-grpc -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==5600)].nodePort}')
+          echo "Mirror node gRPC port forwarded to: $GRPC_MIRROR_PORT"
         else
           echo "Mirror node service mirror-grpc not found, skipping port-forward"
         fi
-        # Port forward mirror node web3 (only if service exists)
+        # Port forward mirror node web3 (use dynamic port)
         if kubectl get svc mirror-web3 -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE ${{ inputs.mirrorNodePortWeb3Rest }}:80 &
+          kubectl port-forward svc/mirror-web3 -n $SOLO_NAMESPACE :80 &
           sleep 5
+          export WEB3_PORT=$(kubectl get svc mirror-web3 -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+          echo "Mirror node Web3 port forwarded to: $WEB3_PORT"
         else
           echo "Mirror node service mirror-web3 not found, skipping port-forward"
         fi
-        # Port forward Java REST API (only if service exists)
+        # Port forward Java REST API (use dynamic port)
         if kubectl get svc mirror-restjava -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE ${{ inputs.javaRestApiPort }}:80 &
+          kubectl port-forward svc/mirror-restjava -n $SOLO_NAMESPACE :80 &
           sleep 5
+          export JAVA_REST_PORT=$(kubectl get svc mirror-restjava -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+          echo "Java REST API port forwarded to: $JAVA_REST_PORT"
         else
           echo "Java REST API service mirror-restjava not found, skipping port-forward"
         fi
@@ -249,10 +261,12 @@ runs:
         # Debug: List pods in the solo namespace
         echo "Listing pods in namespace $SOLO_NAMESPACE:"
         kubectl get pods -n $SOLO_NAMESPACE
-        # Port forward JSON-RPC-Relay (only if service exists)
+        # Port forward JSON-RPC-Relay (use dynamic port)
         if kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE >/dev/null 2>&1; then
-          kubectl port-forward svc/relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE ${{ inputs.relayPort }}:7546 &
+          kubectl port-forward svc/relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE :7546 &
           sleep 5
+          export RELAY_PORT=$(kubectl get svc relay-hedera-json-rpc-relay -n $SOLO_NAMESPACE -o jsonpath='{.spec.ports[?(@.port==7546)].nodePort}')
+          echo "JSON-RPC-Relay port forwarded to: $RELAY_PORT"
         else
           echo "JSON-RPC-Relay service relay-hedera-json-rpc-relay not found, skipping port-forward"
         fi
