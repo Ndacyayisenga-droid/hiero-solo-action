@@ -2,6 +2,10 @@
 
 set -e
 
+# Set overall script timeout (5 minutes)
+SCRIPT_TIMEOUT=300
+START_TIME=$(date +%s)
+
 echo "🔍 Validating gRPC connections..."
 
 # Wait a bit for port forwarding to establish
@@ -12,16 +16,28 @@ sleep 10
 echo "🔍 Debug: Checking what's listening on expected ports..."
 netstat -tlnp 2>/dev/null | grep -E ":(9998|5600|50211)" || echo "No services found on expected ports yet"
 
+# Function to check if script has exceeded timeout
+check_timeout() {
+    local current_time=$(date +%s)
+    local elapsed=$((current_time - START_TIME))
+    if [ $elapsed -gt $SCRIPT_TIMEOUT ]; then
+        echo "❌ Script timeout exceeded (${SCRIPT_TIMEOUT}s). Exiting..."
+        exit 1
+    fi
+}
+
 # Function to check if a port is listening
 check_port() {
     local port=$1
     local service_name=$2
-    local timeout=30
+    local timeout=60
     local count=0
 
     echo "Checking $service_name on port $port..."
 
     while [ $count -lt $timeout ]; do
+        check_timeout
+        
         if nc -z localhost $port 2>/dev/null; then
             echo "✅ $service_name is listening on port $port"
             return 0
@@ -32,6 +48,10 @@ check_port() {
     done
 
     echo "❌ Timeout: $service_name is not listening on port $port after $timeout seconds"
+    echo "Debug: Checking port forwarding processes:"
+    ps aux | grep "kubectl port-forward" || echo "No port-forward processes found"
+    echo "Debug: Checking services in solo namespace:"
+    kubectl get svc -n solo 2>/dev/null || echo "Cannot access kubectl"
     return 1
 }
 

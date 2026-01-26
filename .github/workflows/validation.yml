@@ -135,6 +135,7 @@ jobs:
 
   validate-json-rpc-relay:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
@@ -202,6 +203,7 @@ jobs:
 
   validate-grpc-connections:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
@@ -231,6 +233,7 @@ jobs:
 
   validate-grpc-connections-with-mirror:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0

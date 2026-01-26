@@ -329,12 +329,40 @@ runs:
         SOLO_NAMESPACE: solo
         SOLO_DEPLOYMENT: solo-deployment
         SOLO_GE_0440: ${{ steps.check-solo-version.outputs.solo-ge-0440 }}
+        # Increase timeouts for relay pod readiness checks
+        RELAY_PODS_READY_MAX_ATTEMPTS: 300
+        RELAY_PODS_READY_DELAY: 2000
+        RELAY_PODS_RUNNING_MAX_ATTEMPTS: 900
+        RELAY_PODS_RUNNING_DELAY: 2000
       run: |
         echo "Installing JSON-RPC-Relay..."
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
-          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev
+          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev || {
+            echo "❌ Relay deployment failed. Debugging information:"
+            echo "Checking for relay pods:"
+            kubectl get pods -n ${SOLO_NAMESPACE} | grep relay || echo "No relay pods found"
+            echo "Checking relay pod events:"
+            kubectl get events -n ${SOLO_NAMESPACE} --sort-by='.lastTimestamp' | grep relay | tail -20 || echo "No relay events found"
+            echo "Checking all pods in namespace:"
+            kubectl get pods -n ${SOLO_NAMESPACE}
+            echo "Checking pod descriptions for relay pods:"
+            for pod in $(kubectl get pods -n ${SOLO_NAMESPACE} -o name | grep relay); do
+              echo "=== $pod ==="
+              kubectl describe $pod -n ${SOLO_NAMESPACE} || true
+            done
+            exit 1
+          }
         else
-          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev
+          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev || {
+            echo "❌ Relay deployment failed. Debugging information:"
+            echo "Checking for relay pods:"
+            kubectl get pods -n ${SOLO_NAMESPACE} | grep relay || echo "No relay pods found"
+            echo "Checking relay pod events:"
+            kubectl get events -n ${SOLO_NAMESPACE} --sort-by='.lastTimestamp' | grep relay | tail -20 || echo "No relay events found"
+            echo "Checking all pods in namespace:"
+            kubectl get pods -n ${SOLO_NAMESPACE}
+            exit 1
+          }
         fi
         echo "JSON-RPC-Relay installed successfully"
 
@@ -342,11 +370,35 @@ runs:
         echo "Listing services in namespace ${SOLO_NAMESPACE}:"
         kubectl get svc -n ${SOLO_NAMESPACE}
 
-        # Port forward JSON-RPC-Relay (only if service exists)
-        if kubectl get svc relay-node1-hedera-json-rpc-relay -n ${SOLO_NAMESPACE} >/dev/null 2>&1; then
-          kubectl port-forward svc/relay-node1-hedera-json-rpc-relay -n ${SOLO_NAMESPACE} ${{ inputs.relayPort }}:7546 &
+        # Wait a bit for the service to be fully ready
+        sleep 5
+
+        # Port forward JSON-RPC-Relay - find the service dynamically
+        # The service name format is typically "relay-<id>" or "relay-<id>-hedera-json-rpc-relay"
+        RELAY_SERVICE=$(kubectl get svc -n ${SOLO_NAMESPACE} -l app.kubernetes.io/name=relay -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        
+        if [ -n "${RELAY_SERVICE}" ]; then
+          echo "Found relay service: ${RELAY_SERVICE}"
+          kubectl port-forward svc/${RELAY_SERVICE} -n ${SOLO_NAMESPACE} ${{ inputs.relayPort }}:7546 &
+          echo "Port forwarding started for relay service ${RELAY_SERVICE} on port ${{ inputs.relayPort }}"
         else
-          echo "JSON-RPC-Relay service relay-node1-hedera-json-rpc-relay not found, Skipping port-forward"
+          echo "⚠️  JSON-RPC-Relay service not found with label selector, trying alternative names..."
+          # Try common service name patterns
+          for svc_name in "relay-1" "relay-1-hedera-json-rpc-relay" "relay-node1-hedera-json-rpc-relay"; do
+            if kubectl get svc ${svc_name} -n ${SOLO_NAMESPACE} >/dev/null 2>&1; then
+              echo "Found relay service: ${svc_name}"
+              kubectl port-forward svc/${svc_name} -n ${SOLO_NAMESPACE} ${{ inputs.relayPort }}:7546 &
+              echo "Port forwarding started for relay service ${svc_name} on port ${{ inputs.relayPort }}"
+              RELAY_SERVICE=${svc_name}
+              break
+            fi
+          done
+          
+          if [ -z "${RELAY_SERVICE}" ]; then
+            echo "⚠️  Could not find relay service. Available services:"
+            kubectl get svc -n ${SOLO_NAMESPACE} | grep -E "relay|NAME" || echo "No services found"
+            echo "Note: Port forwarding may be handled automatically by solo in newer versions"
+          fi
         fi
 
     - name: Create ECDSA Account
