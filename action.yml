@@ -336,6 +336,34 @@ runs:
         RELAY_PODS_RUNNING_DELAY: 2000
       run: |
         echo "Installing JSON-RPC-Relay..."
+        
+        # Wait for consensus nodes to be fully active before deploying relay
+        echo "Waiting for consensus nodes to be active..."
+        MAX_WAIT=300
+        ELAPSED=0
+        while [ $ELAPSED -lt $MAX_WAIT ]; do
+          if kubectl get pods -n ${SOLO_NAMESPACE} -l solo.hedera.com/type=network-node --field-selector=status.phase=Running | grep -q Running; then
+            echo "Consensus nodes are running, checking if they're active..."
+            # Check if nodes are ready (not just running)
+            READY_COUNT=$(kubectl get pods -n ${SOLO_NAMESPACE} -l solo.hedera.com/type=network-node --field-selector=status.phase=Running -o jsonpath='{.items[*].status.containerStatuses[?(@.ready==true)].name}' | wc -w)
+            if [ "$READY_COUNT" -gt "0" ]; then
+              echo "Consensus nodes are ready. Proceeding with relay deployment..."
+              break
+            fi
+          fi
+          echo "Waiting for consensus nodes to be ready... ($ELAPSED/$MAX_WAIT seconds)"
+          sleep 5
+          ELAPSED=$((ELAPSED + 5))
+        done
+        
+        if [ $ELAPSED -ge $MAX_WAIT ]; then
+          echo "⚠️  Warning: Consensus nodes may not be fully ready, but proceeding with relay deployment..."
+        else
+          # Give nodes a bit more time to fully initialize services
+          echo "Waiting additional 10 seconds for services to stabilize..."
+          sleep 10
+        fi
+        
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
           solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev || {
             echo "❌ Relay deployment failed. Debugging information:"
@@ -349,7 +377,29 @@ runs:
             for pod in $(kubectl get pods -n ${SOLO_NAMESPACE} -o name | grep relay); do
               echo "=== $pod ==="
               kubectl describe $pod -n ${SOLO_NAMESPACE} || true
+              echo "=== Logs for $pod ==="
+              # Get logs from all containers in the pod
+              kubectl logs $pod -n ${SOLO_NAMESPACE} --all-containers=true --tail=100 || echo "Could not retrieve logs for $pod"
+              echo ""
             done
+            echo "=== Checking ConfigMaps and Secrets ==="
+            kubectl get configmap -n ${SOLO_NAMESPACE} | grep relay || echo "No relay ConfigMaps found"
+            kubectl get secret -n ${SOLO_NAMESPACE} | grep relay || echo "No relay Secrets found"
+            
+            # Check relay ConfigMap contents
+            for cm in $(kubectl get configmap -n ${SOLO_NAMESPACE} -o name | grep relay); do
+              echo "=== ConfigMap: $cm ==="
+              kubectl get $cm -n ${SOLO_NAMESPACE} -o yaml | head -50 || true
+            done
+            
+            # Check if HAProxy services are available (relay needs these)
+            echo "=== Checking HAProxy services (required by relay) ==="
+            kubectl get svc -n ${SOLO_NAMESPACE} | grep haproxy || echo "No HAProxy services found"
+            
+            # Check network node services
+            echo "=== Checking network node services ==="
+            kubectl get svc -n ${SOLO_NAMESPACE} | grep network || echo "No network services found"
+            
             exit 1
           }
         else
@@ -361,6 +411,12 @@ runs:
             kubectl get events -n ${SOLO_NAMESPACE} --sort-by='.lastTimestamp' | grep relay | tail -20 || echo "No relay events found"
             echo "Checking all pods in namespace:"
             kubectl get pods -n ${SOLO_NAMESPACE}
+            echo "Checking pod logs for relay pods:"
+            for pod in $(kubectl get pods -n ${SOLO_NAMESPACE} -o name | grep relay); do
+              echo "=== Logs for $pod ==="
+              kubectl logs $pod -n ${SOLO_NAMESPACE} --all-containers=true --tail=100 || echo "Could not retrieve logs for $pod"
+              echo ""
+            done
             exit 1
           }
         fi
