@@ -353,43 +353,16 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
         SOLO_GE_0440: ${{ steps.check-solo-version.outputs.solo-ge-0440 }}
       run: |
-        # Ensure port 50211 is free for solo relay (may be left in use by deploy step port-forwards)
-        pids=$(lsof -ti:50211 2>/dev/null) || true
-        if [ -n "$pids" ]; then
-          echo "Freeing port 50211 before relay deploy (PIDs: $pids)"
-          kill $pids 2>/dev/null || true
-          sleep 2
-        fi
-        # Brief pause so cluster is settled after previous step
-        sleep 5
-        # Use low-resource values so relay can schedule on CI (single kind node has limited CPU after consensus + mirror).
         RELAY_VALUES_FILE="${GITHUB_WORKSPACE}/relay-low-resources.yaml"
         RELAY_VALUES_FLAG=""
         if [[ -f "${RELAY_VALUES_FILE}" ]]; then
           RELAY_VALUES_FLAG="--values-file ${RELAY_VALUES_FILE}"
         fi
-        echo "Installing JSON-RPC-Relay..."
-        relay_failed=0
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
-          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG} || relay_failed=1
+          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG}
         else
-          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG} || relay_failed=1
+          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG}
         fi
-        if [ "$relay_failed" -eq 1 ]; then
-          echo "Relay deploy failed, dumping pod state for debugging:"
-          kubectl get pods -n ${SOLO_NAMESPACE} -l app.kubernetes.io/name=relay -o wide 2>/dev/null || true
-          kubectl describe pods -n ${SOLO_NAMESPACE} -l app.kubernetes.io/name=relay 2>/dev/null || true
-          for p in $(kubectl get pods -n ${SOLO_NAMESPACE} -l app.kubernetes.io/name=relay -o name 2>/dev/null); do
-            echo "--- Logs for $p ---"
-            kubectl logs $p -n ${SOLO_NAMESPACE} --tail=100 2>/dev/null || true
-          done
-          exit 1
-        fi
-        echo "JSON-RPC-Relay installed successfully"
-
-        # Debug: List services in the solo namespace
-        echo "Listing services in namespace ${SOLO_NAMESPACE}:"
-        kubectl get svc -n ${SOLO_NAMESPACE}
 
         # Port forward JSON-RPC-Relay (only if service exists)
         if kubectl get svc relay-node1-hedera-json-rpc-relay -n ${SOLO_NAMESPACE} >/dev/null 2>&1; then
