@@ -280,8 +280,7 @@ runs:
 
     # Mirror node is required when installRelay is true (relay expects mirror-ingress-controller).
     - name: Deploy MirrorNode
-      if: ${{ inputs.installMirrorNode == 'true' }} # see https://github.com/actions/runner/issues/2238
-      # if: ${{ inputs.installMirrorNode == 'true' || inputs.installRelay == 'true' }} # see https://github.com/actions/runner/issues/2238
+      if: ${{ inputs.installMirrorNode == 'true' || inputs.installRelay == 'true' }} # see https://github.com/actions/runner/issues/2238
       shell: bash
       env:
         SOLO_NAMESPACE: solo
