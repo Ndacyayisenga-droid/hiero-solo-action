@@ -223,24 +223,6 @@ runs:
           solo node start -i ${NODE_IDS} --deployment ${SOLO_DEPLOYMENT} --dev
         fi
 
-        # Debug: List services in the solo namespace
-        echo "Listing services in namespace ${SOLO_NAMESPACE}:"
-        kubectl get svc -n ${SOLO_NAMESPACE}
-
-        # Debug: Show current user
-        echo "Current user: $(whoami)"
-
-        # Free ports that solo may leave in use (e.g. from consensus node start port-forwards)
-        # so our kubectl port-forwards can bind successfully.
-        # for port in 50211 30212; do
-        #   pids=$(lsof -ti:${port} 2>/dev/null) || true
-        #   if [ -n "$pids" ]; then
-        #     echo "Freeing port ${port} (PIDs: $pids)"
-        #     kill $pids 2>/dev/null || true
-        #     sleep 1
-        #   fi
-        # done
-
         # Add entries to /etc/hosts for easier access (requires sudo)
         echo "Attempting to add entries to /etc/hosts..."
         if sudo -n true 2>/dev/null; then
@@ -257,15 +239,17 @@ runs:
         fi
 
         # Port forward HAProxy for node1 (only if service exists).
+        if kubectl get svc haproxy-node1-svc -n ${SOLO_NAMESPACE} >/dev/null 2>&1; then
         # Skip when installRelay is true so port 50211 stays free for solo relay node add.
-        if [[ "${{ inputs.installRelay }}" != "true" ]] && kubectl get svc haproxy-node1-svc -n ${SOLO_NAMESPACE} >/dev/null 2>&1; then
+        # if [[ "${{ inputs.installRelay }}" != "true" ]] && kubectl get svc haproxy-node1-svc -n ${SOLO_NAMESPACE} >/dev/null 2>&1; then
           kubectl port-forward svc/haproxy-node1-svc -n ${SOLO_NAMESPACE} ${{ inputs.haproxyPort }}:50211 &
         else
-          if [[ "${{ inputs.installRelay }}" == "true" ]]; then
-            echo "Skipping HAProxy port-forward (installRelay=true) so relay step can use port 50211"
-          else
-            echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
-          fi
+          echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
+          # if [[ "${{ inputs.installRelay }}" == "true" ]]; then
+          #   echo "Skipping HAProxy port-forward (installRelay=true) so relay step can use port 50211"
+          # else
+          #   echo "HAProxy service haproxy-node1-svc not found, skipping port-forward"
+          # fi
         fi
 
         # Port forward services for node2 if dual mode is enabled
