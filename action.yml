@@ -228,7 +228,7 @@ runs:
         kubectl get svc -n ${SOLO_NAMESPACE}
 
         # Debug: Show current user
-        echo "Current user: $(whoami
+        echo "Current user: $(whoami)"
 
         # Add entries to /etc/hosts for easier access (requires sudo)
         echo "Attempting to add entries to /etc/hosts..."
