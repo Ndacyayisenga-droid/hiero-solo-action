@@ -337,15 +337,18 @@ runs:
         SOLO_DEPLOYMENT: solo-deployment
         SOLO_GE_0440: ${{ steps.check-solo-version.outputs.solo-ge-0440 }}
       run: |
-        RELAY_VALUES_FILE="${GITHUB_WORKSPACE}/relay-low-resources.yaml"
-        RELAY_VALUES_FLAG=""
-        if [[ -f "${RELAY_VALUES_FILE}" ]]; then
-          RELAY_VALUES_FLAG="--values-file ${RELAY_VALUES_FILE}"
-        fi
+        echo "Installing JSON-RPC-Relay..."
+        # RELAY_VALUES_FILE="${GITHUB_WORKSPACE}/relay-low-resources.yaml"
+        # RELAY_VALUES_FLAG=""
+        # if [[ -f "${RELAY_VALUES_FILE}" ]]; then
+        #   RELAY_VALUES_FLAG="--values-file ${RELAY_VALUES_FILE}"
+        # fi
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
-          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG}
+          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev
+          # solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG}
         else
-          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG}
+          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev
+          # solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG}
         fi
         echo "JSON-RPC-Relay installed successfully"
 
