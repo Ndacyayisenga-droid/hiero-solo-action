@@ -280,7 +280,8 @@ runs:
 
     # Mirror node is required when installRelay is true (relay expects mirror-ingress-controller).
     - name: Deploy MirrorNode
-      if: ${{ inputs.installMirrorNode == 'true' || inputs.installRelay == 'true' }} # see https://github.com/actions/runner/issues/2238
+      if: ${{ inputs.installMirrorNode == 'true' }} # see https://github.com/actions/runner/issues/2238
+      # if: ${{ inputs.installMirrorNode == 'true' || inputs.installRelay == 'true' }} # see https://github.com/actions/runner/issues/2238
       shell: bash
       env:
         SOLO_NAMESPACE: solo
@@ -289,16 +290,16 @@ runs:
         MIRROR_NODE_VERSION: ${{ inputs.mirrorNodeVersion }}
         SOLO_GE_0440: ${{ steps.check-solo-version.outputs.solo-ge-0440 }}
         # Relay requires mirror-ingress-controller; --enable-ingress installs it.
-        ENABLE_INGRESS: ${{ inputs.installRelay == 'true' }}
+        # ENABLE_INGRESS: ${{ inputs.installRelay == 'true' }}
       run: |
-        ENABLE_INGRESS_FLAG=""
-        if [[ "${ENABLE_INGRESS}" == "true" ]]; then
-          ENABLE_INGRESS_FLAG="--enable-ingress"
-        fi
+        # ENABLE_INGRESS_FLAG=""
+        # if [[ "${ENABLE_INGRESS}" == "true" ]]; then
+        #   ENABLE_INGRESS_FLAG="--enable-ingress"
+        # fi
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
-          solo mirror node add --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger ${ENABLE_INGRESS_FLAG} --dev
+          solo mirror node add --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger --dev
         else
-          solo mirror-node deploy --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger ${ENABLE_INGRESS_FLAG} --dev
+          solo mirror-node deploy --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger --dev
         fi
 
         # Debug: List services in the solo namespace
