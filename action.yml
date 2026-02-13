@@ -347,6 +347,11 @@ runs:
         else
           solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG}
         fi
+        echo "JSON-RPC-Relay installed successfully"
+
+        # Debug: List services in the solo namespace
+        echo "Listing services in namespace ${SOLO_NAMESPACE}:"
+        kubectl get svc -n ${SOLO_NAMESPACE}
 
         # Port forward JSON-RPC-Relay (only if service exists)
         if kubectl get svc relay-node1-hedera-json-rpc-relay -n ${SOLO_NAMESPACE} >/dev/null 2>&1; then
