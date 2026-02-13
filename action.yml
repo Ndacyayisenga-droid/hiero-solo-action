@@ -223,6 +223,13 @@ runs:
           solo node start -i ${NODE_IDS} --deployment ${SOLO_DEPLOYMENT} --dev
         fi
 
+        # Debug: List services in the solo namespace
+        echo "Listing services in namespace ${SOLO_NAMESPACE}:"
+        kubectl get svc -n ${SOLO_NAMESPACE}
+
+        # Debug: Show current user
+        echo "Current user: $(whoami
+
         # Add entries to /etc/hosts for easier access (requires sudo)
         echo "Attempting to add entries to /etc/hosts..."
         if sudo -n true 2>/dev/null; then
