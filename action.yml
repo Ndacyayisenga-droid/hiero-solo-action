@@ -291,10 +291,10 @@ runs:
         # Relay requires mirror-ingress-controller; --enable-ingress installs it.
         ENABLE_INGRESS: ${{ inputs.installRelay == 'true' }}
       run: |
-        # ENABLE_INGRESS_FLAG=""
-        # if [[ "${ENABLE_INGRESS}" == "true" ]]; then
-        #   ENABLE_INGRESS_FLAG="--enable-ingress"
-        # fi
+        ENABLE_INGRESS_FLAG=""
+        if [[ "${ENABLE_INGRESS}" == "true" ]]; then
+          ENABLE_INGRESS_FLAG="--enable-ingress"
+        fi
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
           solo mirror node add --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger --dev
         else
