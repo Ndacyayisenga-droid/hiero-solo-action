@@ -232,14 +232,14 @@ runs:
 
         # Free ports that solo may leave in use (e.g. from consensus node start port-forwards)
         # so our kubectl port-forwards can bind successfully.
-        for port in 50211 30212; do
-          pids=$(lsof -ti:${port} 2>/dev/null) || true
-          if [ -n "$pids" ]; then
-            echo "Freeing port ${port} (PIDs: $pids)"
-            kill $pids 2>/dev/null || true
-            sleep 1
-          fi
-        done
+        # for port in 50211 30212; do
+        #   pids=$(lsof -ti:${port} 2>/dev/null) || true
+        #   if [ -n "$pids" ]; then
+        #     echo "Freeing port ${port} (PIDs: $pids)"
+        #     kill $pids 2>/dev/null || true
+        #     sleep 1
+        #   fi
+        # done
 
         # Add entries to /etc/hosts for easier access (requires sudo)
         echo "Attempting to add entries to /etc/hosts..."
