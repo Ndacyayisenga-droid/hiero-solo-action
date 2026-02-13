@@ -362,12 +362,18 @@ runs:
         fi
         # Brief pause so cluster is settled after previous step
         sleep 5
+        # Use low-resource values so relay can schedule on CI (single kind node has limited CPU after consensus + mirror).
+        RELAY_VALUES_FILE="${GITHUB_WORKSPACE}/relay-low-resources.yaml"
+        RELAY_VALUES_FLAG=""
+        if [[ -f "${RELAY_VALUES_FILE}" ]]; then
+          RELAY_VALUES_FLAG="--values-file ${RELAY_VALUES_FILE}"
+        fi
         echo "Installing JSON-RPC-Relay..."
         relay_failed=0
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
-          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev || relay_failed=1
+          solo relay node add -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG} || relay_failed=1
         else
-          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev || relay_failed=1
+          solo relay deploy -i node1 --deployment ${SOLO_DEPLOYMENT} --dev ${RELAY_VALUES_FLAG} || relay_failed=1
         fi
         if [ "$relay_failed" -eq 1 ]; then
           echo "Relay deploy failed, dumping pod state for debugging:"
