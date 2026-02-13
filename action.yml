@@ -296,9 +296,9 @@ runs:
           ENABLE_INGRESS_FLAG="--enable-ingress"
         fi
         if [[ "${SOLO_GE_0440}" == "true" ]]; then
-          solo mirror node add --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger --dev
+          solo mirror node add --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger ${ENABLE_INGRESS_FLAG} --dev
         else
-          solo mirror-node deploy --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger --dev
+          solo mirror-node deploy --cluster-ref kind-${SOLO_CLUSTER_NAME} --deployment ${SOLO_DEPLOYMENT} --mirror-node-version ${MIRROR_NODE_VERSION} --pinger ${ENABLE_INGRESS_FLAG} --dev
         fi
 
         # Debug: List services in the solo namespace
