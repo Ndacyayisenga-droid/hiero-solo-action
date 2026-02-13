@@ -289,7 +289,7 @@ runs:
         MIRROR_NODE_VERSION: ${{ inputs.mirrorNodeVersion }}
         SOLO_GE_0440: ${{ steps.check-solo-version.outputs.solo-ge-0440 }}
         # Relay requires mirror-ingress-controller; --enable-ingress installs it.
-        # ENABLE_INGRESS: ${{ inputs.installRelay == 'true' }}
+        ENABLE_INGRESS: ${{ inputs.installRelay == 'true' }}
       run: |
         # ENABLE_INGRESS_FLAG=""
         # if [[ "${ENABLE_INGRESS}" == "true" ]]; then
