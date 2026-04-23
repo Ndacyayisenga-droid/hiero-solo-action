@@ -180,7 +180,7 @@ jobs:
           RESPONSE=$(curl -s -w "%{http_code}" -X POST 'http://localhost:7546' \
             -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-            -o response.json)
+            -o response.json || true)
           if [ "$RESPONSE" -ne 200 ]; then
             echo "❌ Error: JSON-RPC request failed with status code $RESPONSE"
             echo "Response body:"
