@@ -177,14 +177,16 @@ jobs:
           echo "ED25519 Public Key: ${{ steps.solo.outputs.ed25519PublicKey }}"
 
           sleep 30
+          : > response.json
           RESPONSE=$(curl -s -w "%{http_code}" -X POST 'http://localhost:7546' \
+            --retry 12 --retry-delay 5 --retry-connrefused \
             -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
             -o response.json || true)
           if [ "$RESPONSE" -ne 200 ]; then
             echo "❌ Error: JSON-RPC request failed with status code $RESPONSE"
             echo "Response body:"
-            cat response.json
+            [ -f response.json ] && cat response.json
             echo "Checking if relay service is running:"
             kubectl get pods -n solo | grep relay
             exit 1
@@ -193,7 +195,7 @@ jobs:
           if [ -z "$CHAIN_ID" ] || [ "$CHAIN_ID" = "null" ]; then
             echo "❌ Error: Invalid or missing chainId in response"
             echo "Response body:"
-            cat response.json
+            [ -f response.json ] && cat response.json
             exit 1
           fi
           echo "✅ JSON-RPC Relay request successful"
