@@ -209,7 +209,7 @@ jobs:
           if [ "$RESPONSE" != "200" ]; then
             echo "❌ Error: JSON-RPC request failed with status code $RESPONSE"
             echo "Response body:"
-            [ -f response.json ] && cat response.json
+            cat response.json
             echo "Checking if relay service is running:"
             kubectl get pods -n solo | grep relay
             exit 1
@@ -218,7 +218,7 @@ jobs:
           if [ -z "$CHAIN_ID" ] || [ "$CHAIN_ID" = "null" ]; then
             echo "❌ Error: Invalid or missing chainId in response"
             echo "Response body:"
-            [ -f response.json ] && cat response.json
+            cat response.json
             exit 1
           fi
           echo "✅ JSON-RPC Relay request successful"
