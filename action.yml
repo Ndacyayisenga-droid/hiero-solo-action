@@ -135,11 +135,20 @@ runs:
       uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
       with:
         install_only: true
-        node_image: kindest/node:v1.31.4@sha256:2cb39f7295fe7eafee0842b1052a599a4fb0f8bcf3f83d96c7f4864c357c6c30
-        version: v0.26.0
-        kubectl_version: v1.31.4
+        node_image: kindest/node:v1.32.2@sha256:3966f21e12b760f6585bde7140cae5e8cdc0e52b37a6f90ce39834b6e72e3f49
+        version: v0.29.0
+        kubectl_version: v1.32.2
         verbosity: 3
         wait: 120s
+
+    - name: Install Helm
+      shell: bash
+      run: |
+        set -euo pipefail
+        HELM_VERSION=v3.14.2
+        curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar xz -C /tmp
+        sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+        helm version
 
     - name: Cleanup Previous Runs
       shell: bash
@@ -149,7 +158,7 @@ runs:
 
     - name: Install Solo
       shell: bash
-      run: npm install -g @hashgraph/solo@${{ inputs.soloVersion }}
+      run: npm install -g @hiero-ledger/solo@${{ inputs.soloVersion }}
 
     # Solo version has changed command values after 0.44.0. Commands should be executed based on
     # https://github.com/hiero-ledger/solo/blob/main/docs/site/content/en/docs/cli-migrations.md
@@ -203,8 +212,8 @@ runs:
           # Generate node keys
           solo keys consensus generate --gossip-keys --tls-keys -i ${NODE_IDS} --deployment ${SOLO_DEPLOYMENT} --dev
 
-          # Setup the Solo cluster
-          solo cluster-ref config setup -s ${SOLO_CLUSTER_NAME} --dev
+          # Setup the Solo cluster (shared components namespace)
+          solo cluster-ref config setup -s ${SOLO_CLUSTER_SETUP_NAMESPACE} --dev
 
           # Optionally deploy a block node before the consensus network is deployed.
           if [[ "${INSTALL_BLOCK_NODE}" == "true" ]]; then
@@ -226,7 +235,7 @@ runs:
           # Generate node keys
           solo node keys --gossip-keys --tls-keys -i ${NODE_IDS} --deployment ${SOLO_DEPLOYMENT} --dev
           
-          solo cluster-ref setup -s ${SOLO_CLUSTER_NAME} --dev
+          solo cluster-ref setup -s ${SOLO_CLUSTER_SETUP_NAMESPACE} --dev
 
           # Optionally deploy a block node before the consensus network is deployed.
           if [[ "${INSTALL_BLOCK_NODE}" == "true" ]]; then
